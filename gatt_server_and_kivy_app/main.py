@@ -22,46 +22,51 @@ class RemoteMouseApp(App):
         super().__init__(**kwargs)
         self.message="dating;server down;"
     
-    def update(self):
+    def update_message(self,part,new):
         contents=self.message.split(";")
-        if contents[0]=="up":
-            contents[0]="dating"
-        elif contents[0]=="dating":
-            contents[0]="up"
+        contents[part]=new
         self.message=f"{contents[0]};{contents[1]};{contents[2]}"
+
+    def update(self):
+        if self.message[0]=="u":
+            self.update_message(self,0,"dating")
+        elif self.message[0]=="d":
+            self.update_message(self,0,"up")
         return self.message
 
     def setup_ble_server(self):
         # Getting Bluetooth adapter to check bluetooth is enabled
         if not BluetoothAdapter.getDefaultAdapter().isEnabled():
             return False
+        self.update_message(self,2,"bluetooth enabled")
         # Setup BLE GATT Server
         bt_manager=PythonActivity.mActivity.getSystemService(self.get_context(),BluetoothManager.BLUETOOTH_SERVICE)
         gatt_server=bt_manager.openGattServer(self.get_context(),self.gatt_server_callback)
+        self.update_message(self,2,"passed manager/server")
 
         # Input data stream service and characteristics
         service=GattService(uuid("4500"),GattService.SERVICE_TYPE_PRIMARY)
+        self.update_message(self,2,"made service")
         characteristics=[]
         for i in range(4):
             characteristics.append(GattCharacteristic(uuid(f"450{i+1}"),
                 GattCharacteristic.PROPERTY_NOTIFY, # for characteristic to support BLE notifications
                 GattCharacteristic.PERMISSION_READ)) # allow client to read characteristic's value
+            self.update_message(self,2,f"made characteristic {i+1}")
             service.addCharacteristic(characteristics[i])
+            self.update_message(self,2,f"added characteristic {i+1}")
         gatt_server.addService(service)
+        self.update_message(self,2,"added service")
         return True
 
     def gatt_server_callback(self,device,status,newState):
-        contents=self.message.split(";")
-        contents[2]=f"device: {device}, status: {status}, new state: {newState}"
-        self.message=f"{contents[0]};{contents[1]};{contents[2]}"
+        self.update_message(self,2,f"device: {device}, status: {status}, new state: {newState}")
 
     def build(self):
-        contents=self.message.split(";")
         if self.setup_ble_server():
-            contents[1]="server up"
+            self.update_message(self,1,"server up")
         else:
-            contents[1]="bluetooth off"
-        self.message=f"{contents[0]};{contents[1]};{contents[2]}"
+            self.update_message(self,1,"bluetooth disabled")
         return MainWidget()
 
 # UI - currently just outputs touch pos onto the screen
@@ -84,6 +89,5 @@ class MainWidget(Widget):
     def update(self,dt):
         self.out2.text=App.get_running_app().update()
         self.out2.pos=(self.width/2,self.height/4)
-
 
 RemoteMouseApp().run()
