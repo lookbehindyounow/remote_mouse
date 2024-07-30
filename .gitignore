@@ -1,2 +1,2 @@
-gatt_server_and_kivy_app/bin
-gatt_server_and_kivy_app/.buildozer
+kivy_app_with_server/bin
+kivy_app_with_server/.buildozer
