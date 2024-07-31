@@ -22,17 +22,17 @@ UUID=autoclass('java.util.UUID')
 def uuid(id):
     return UUID.fromString(f"0000{id}-0000-1000-8000-00805f9b34fb")
 
-# this subclass is all chatgtp code & is required because
-# passing a BluetoothGattServerCallback object straight to openGattServer crashes the program despite the error handler
-# but it also doesn't work as "android/bluetooth/BluetoothGattServerCallback is not an interface"
+# this subclass is required because BluetoothGattServerCallback is an abstract class
+# & openGattServer (line 75) requires a BluetoothGattServerCallback object
+# it doesn't work because "android/bluetooth/BluetoothGattServerCallback is not an interface"
 # & without __javainterfaces__ I get "MyBluetoothGattServerCallback has no attribute __javainterfaces__"
-# chatgpt is stuck in a loop saying to remove __javainterfaces__
-# despite me stating clearly that openGattServer seems to require it, so I'm unsure what to put there
+# chatgpt gets stuck going back & forth like it's a catch 22
 try:
     class MyBluetoothGattServerCallback(PythonJavaClass):
-        __javaclass__ = 'android/bluetooth/BluetoothGattServerCallback'
-        __javainterfaces__ = ['android/bluetooth/BluetoothGattServerCallback']
-        __javacontext__ = 'app'
+        __javaclass__='android/bluetooth/BluetoothGattServerCallback'
+        __javainterfaces__=['android/bluetooth/BluetoothGattServerCallback']
+        __javacontext__='app'
+
         @java_method('(Landroid/bluetooth/BluetoothDevice;IIZ)V')
         def onConnectionStateChange(self, device, status, newState):
             App.get_running_app().update_message(2, f"device: {device}, status: {status}, new state: {newState}")
