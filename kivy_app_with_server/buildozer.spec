@@ -13,7 +13,7 @@ package.domain = org.remote.mouse
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,java
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png
@@ -51,7 +51,7 @@ requirements = python3,kivy,kivymd,pyjnius
 
 # (list) Supported orientations
 # Valid options are: landscape, portrait, portrait-reverse or landscape-reverse
-orientation = landscape
+orientation = landscape, portrait, portrait-reverse, landscape-reverse
 
 # (list) List of service to declare
 #services = NAME:ENTRYPOINT_TO_PY,NAME2:ENTRYPOINT2_TO_PY
@@ -177,7 +177,7 @@ android.permissions = android.permission.BLUETOOTH, android.permission.ACCESS_FI
 
 # (list) List of Java files to add to the android project (can be java or a
 # directory containing the files)
-#android.add_src =
+android.add_src = java
 
 # (list) Android AAR archives to add
 #android.add_aars =

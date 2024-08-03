@@ -1,4 +1,4 @@
-from jnius import autoclass, PythonJavaClass, java_method
+from jnius import autoclass, PythonJavaClass, JavaClass, MetaJavaClass, java_method # remove all bar autoclass
 from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.scatter import Scatter
@@ -7,12 +7,13 @@ from kivy.clock import Clock
 
 # need java classes to do android stuff
 try:
+    Callback=autoclass('com.remotemouse.Callback') # need a callback object & BluetoothGattServerCallback is an abstract class
     Context=autoclass('android.content.Context')
     PythonActivity=autoclass('org.kivy.android.PythonActivity')
     BluetoothAdapter=autoclass('android.bluetooth.BluetoothAdapter')
     BluetoothManager=autoclass('android.bluetooth.BluetoothManager')
     BluetoothGattServer=autoclass('android.bluetooth.BluetoothGattServer')
-    BluetoothGattServerCallback=autoclass('android.bluetooth.BluetoothGattServerCallback')
+    BluetoothGattServerCallback=autoclass('android.bluetooth.BluetoothGattServerCallback') # remove
     GattService=autoclass('android.bluetooth.BluetoothGattService')
     GattCharacteristic=autoclass('android.bluetooth.BluetoothGattCharacteristic')
 except: # this is so I can run it on my laptop to test non-bluetooth stuff
@@ -22,45 +23,55 @@ UUID=autoclass('java.util.UUID')
 def uuid(id):
     return UUID.fromString(f"0000{id}-0000-1000-8000-00805f9b34fb")
 
+### - remove below - ###
+
 # this subclass is required because BluetoothGattServerCallback is an abstract class
 # & openGattServer (line 75) requires a BluetoothGattServerCallback object
 # it doesn't work because "android/bluetooth/BluetoothGattServerCallback is not an interface"
 # & without __javainterfaces__ I get "MyBluetoothGattServerCallback has no attribute __javainterfaces__"
 # chatgpt gets stuck going back & forth like it's a catch 22
-try:
-    class MyBluetoothGattServerCallback(PythonJavaClass):
-        __javaclass__='android/bluetooth/BluetoothGattServerCallback'
-        __javainterfaces__=['android/bluetooth/BluetoothGattServerCallback']
-        __javacontext__='app'
+print("HERE0")
+# try:
+#     print("HERE1a")
+#     class Callback(JavaClass):
+#         __javaclass__='com.remotemouse.Callback'
+#         __javacontext__='app'
+#         def onConnectionStateChange(self, device, status, newState):
+#             details=self._call_java_method("onConnectionStateChange")
+#             App.get_running_app().update_message(2,details)
+#         # @java_method('(Landroid/bluetooth/BluetoothDevice;ILandroid/bluetooth/BluetoothGattCharacteristic;)V')
+#         # def onCharacteristicReadRequest(self, device, requestId, offset, characteristic):
+#         #     pass
+#         # @java_method('(Landroid/bluetooth/BluetoothDevice;ILandroid/bluetooth/BluetoothGattCharacteristic;ZZ[B)V')
+#         # def onCharacteristicWriteRequest(self, device, requestId, characteristic, preparedWrite, responseNeeded, offset, value):
+#         #     pass
+# except: # this is so I can run it on my laptop to test non-bluetooth stuff
+#     print("HERE1b")
+#     pass
+# print("HERE2")
 
-        @java_method('(Landroid/bluetooth/BluetoothDevice;IIZ)V')
-        def onConnectionStateChange(self, device, status, newState):
-            App.get_running_app().update_message(2, f"device: {device}, status: {status}, new state: {newState}")
-        @java_method('(Landroid/bluetooth/BluetoothDevice;ILandroid/bluetooth/BluetoothGattCharacteristic;)V')
-        def onCharacteristicReadRequest(self, device, requestId, offset, characteristic):
-            pass
-        @java_method('(Landroid/bluetooth/BluetoothDevice;ILandroid/bluetooth/BluetoothGattCharacteristic;ZZ[B)V')
-        def onCharacteristicWriteRequest(self, device, requestId, characteristic, preparedWrite, responseNeeded, offset, value):
-            pass
-except: # this is so I can run it on my laptop to test non-bluetooth stuff
-    pass
+### - remove above - ###
 
 class RemoteMouseApp(App):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.message="0\n\n"
+        self.callback=None
     
     # updates formatted status/error message which we need stored as I can't see the console on my phone
     def update_message(self,part,new):
         contents=self.message.split("\n")
-        contents[part]=new
+        contents[part]=str(new)
         self.message=f"{contents[0]}\n{contents[1]}\n{contents[2]}"
+        print("HERE1",new)
 
     def update(self): # called by MainWidget to get bluetooth status/errors
         if self.message[0]=="0":
             self.update_message(0,"1")
         elif self.message[0]=="1":
             self.update_message(0,"0")
+        if self.callback:
+            self.update_message(2,self.callback.message)
         return self.message
 
     def setup_ble_server(self):
@@ -71,8 +82,9 @@ class RemoteMouseApp(App):
             self.update_message(1,"bluetooth enabled")
             # Setup BLE GATT Server
             app_context=PythonActivity.mActivity
-            bt_manager=app_context.getSystemService(Context.BLUETOOTH_SERVICE)
-            gatt_server=bt_manager.openGattServer(app_context,MyBluetoothGattServerCallback())
+            bluetooth_manager=app_context.getSystemService(Context.BLUETOOTH_SERVICE) # object to start the server
+            self.callback=Callback() # need callback object to update message
+            self.gatt_server=bluetooth_manager.openGattServer(app_context,self.callback) # server
             self.update_message(1,"passed manager/server")
 
             # Input data stream service and characteristics
@@ -86,7 +98,7 @@ class RemoteMouseApp(App):
                 self.update_message(1,f"made characteristic {i+1}")
                 service.addCharacteristic(characteristics[i])
                 self.update_message(1,f"added characteristic {i+1}")
-            gatt_server.addService(service)
+            self.gatt_server.addService(service)
             self.update_message(1,"added service")
             return True
         except Exception as error:
