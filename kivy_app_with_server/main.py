@@ -1,5 +1,6 @@
-from jnius import autoclass, PythonJavaClass, JavaClass, MetaJavaClass, java_method # remove all bar autoclass
-from android.permissions import request_permissions, Permission # this is not a real python library, it's handled at compile-time
+from jnius import autoclass # this allows us to work with java classes so we can access android bluetooth functionality
+
+# UI stuff
 from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.scatter import Scatter
@@ -8,6 +9,8 @@ from kivy.clock import Clock
 
 # need java classes to do android stuff
 try:
+    from android.permissions import request_permissions, Permission # this is not a real python library
+    # it's handled at compile-time & is only here to ask runtime permissions, which I'm not yet 100% sure we need
     Context=autoclass('android.content.Context')
     PythonActivity=autoclass('org.kivy.android.PythonActivity')
 
@@ -22,49 +25,20 @@ try:
     GattService=autoclass('android.bluetooth.BluetoothGattService')
     GattCharacteristic=autoclass('android.bluetooth.BluetoothGattCharacteristic')
 
-    # advertising - test code from chatgpt
+    # advertising
     AdCallback=autoclass('com.remotemouse.AdCallback') # need an advertise callback object & AdvertiseCallback is an abstract class
-    AdvertiseSettings = autoclass('android.bluetooth.le.AdvertiseSettings')
-    AdvertiseSettingsBuilder = autoclass('android.bluetooth.le.AdvertiseSettings$Builder')
-    AdvertiseData = autoclass('android.bluetooth.le.AdvertiseData')
-    AdvertiseDataBuilder = autoclass('android.bluetooth.le.AdvertiseData$Builder')
-    AdvertiseCallback = autoclass('android.bluetooth.le.AdvertiseCallback') # remove
-    BluetoothLeAdvertiser = autoclass('android.bluetooth.le.BluetoothLeAdvertiser') # remove
+    AdvertiseSettings=autoclass('android.bluetooth.le.AdvertiseSettings')
+    AdvertiseSettingsBuilder=autoclass('android.bluetooth.le.AdvertiseSettings$Builder')
+    AdvertiseData=autoclass('android.bluetooth.le.AdvertiseData')
+    AdvertiseDataBuilder=autoclass('android.bluetooth.le.AdvertiseData$Builder')
+    AdvertiseCallback=autoclass('android.bluetooth.le.AdvertiseCallback') # remove
+    BluetoothLeAdvertiser=autoclass('android.bluetooth.le.BluetoothLeAdvertiser') # remove
 except: # this is so I can run it on my laptop to test non-bluetooth stuff
     pass
 UUID=autoclass('java.util.UUID')
 # bluetooth SIG standard format for UUIDs: 0000xxxx-0000-1000-8000-00805f9b34fb
 def uuid(id):
     return UUID.fromString(f"0000{id}-0000-1000-8000-00805f9b34fb")
-
-### - remove below - ###
-
-# this subclass is required because BluetoothGattServerCallback is an abstract class
-# & openGattServer (line 75) requires a BluetoothGattServerCallback object
-# it doesn't work because "android/bluetooth/BluetoothGattServerCallback is not an interface"
-# & without __javainterfaces__ I get "MyBluetoothGattServerCallback has no attribute __javainterfaces__"
-# chatgpt gets stuck going back & forth like it's a catch 22
-# print("HERE0")
-# try:
-#     print("HERE1a")
-#     class Callback(JavaClass):
-#         __javaclass__='com.remotemouse.Callback'
-#         __javacontext__='app'
-#         def onConnectionStateChange(self, device, status, newState):
-#             details=self._call_java_method("onConnectionStateChange")
-#             App.get_running_app().update_message(2,details)
-#         # @java_method('(Landroid/bluetooth/BluetoothDevice;ILandroid/bluetooth/BluetoothGattCharacteristic;)V')
-#         # def onCharacteristicReadRequest(self, device, requestId, offset, characteristic):
-#         #     pass
-#         # @java_method('(Landroid/bluetooth/BluetoothDevice;ILandroid/bluetooth/BluetoothGattCharacteristic;ZZ[B)V')
-#         # def onCharacteristicWriteRequest(self, device, requestId, characteristic, preparedWrite, responseNeeded, offset, value):
-#         #     pass
-# except: # this is so I can run it on my laptop to test non-bluetooth stuff
-#     print("HERE1b")
-#     pass
-# print("HERE2")
-
-### - remove above - ###
 
 class RemoteMouseApp(App):
     def __init__(self,**kwargs):
@@ -80,7 +54,7 @@ class RemoteMouseApp(App):
         self.message=f"{contents[0]}\n{contents[1]}\n{contents[2]}"
         print("HERE1",new)
 
-    def update(self): # called by MainWidget to get bluetooth status/errors
+    def update(self): # called by UI MainWidget to get bluetooth status/errors to display
         if self.message[0]=="0":
             self.update_message(0,"1")
         elif self.message[0]=="1":
@@ -94,9 +68,13 @@ class RemoteMouseApp(App):
     def setup_ble_server(self):
         try:
             # Getting Bluetooth adapter to check bluetooth is enabled
-            if not BluetoothAdapter.getDefaultAdapter().isEnabled():
+            self.adapter=BluetoothAdapter.getDefaultAdapter()
+            if not self.adapter.isEnabled():
                 return False
             self.update_message(1,"bluetooth enabled")
+            self.adapter.setName("remote_mouse")
+            self.update_message(1,"set name")
+
             # Setup BLE GATT Server
             app_context=PythonActivity.mActivity
             bluetooth_manager=app_context.getSystemService(Context.BLUETOOTH_SERVICE) # object to start the server
@@ -118,36 +96,42 @@ class RemoteMouseApp(App):
             self.gatt_server.addService(service)
             self.update_message(1,"added service")
             return True
+        
         except Exception as error:
             self.update_message(2,error)
     
-    def advertise(self): # chatgpt code
+    def advertise(self): # BLE equivalent of becoming discoverable
         try:
-            bluetooth_advertiser = BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser()
+            bluetooth_advertiser=self.adapter.getBluetoothLeAdvertiser()
             self.update_message(1,"made advertiser")
-            settings_builder = AdvertiseSettingsBuilder()
+
+            settings_builder=AdvertiseSettingsBuilder()
             # options: ADVERTISE_MODE_LOW_LATENCY, ADVERTISE_MODE_BALANCED, ADVERTISE_MODE_BALANCED
             settings_builder.setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             # options: ADVERTISE_TX_POWER_HIGH, ADVERTISE_TX_POWER_MEDIUM, ADVERTISE_TX_POWER_LOW, ADVERTISE_TX_POWER_ULTRA_LOW
             settings_builder.setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             settings_builder.setConnectable(True)
             settings=settings_builder.build()
-            self.update_message(1,"built settings")
-            BluetoothAdapter.getDefaultAdapter().setName("remote_mouse")
-            self.update_message(1,"set name")
-            data_builder = AdvertiseDataBuilder()
+            self.update_message(1,"built advertise settings object")
+            
+            data_builder=AdvertiseDataBuilder()
             data_builder.setIncludeDeviceName(True)
             data=data_builder.build()
-            self.update_message(1,"built data")
-            self.ad_callback = AdCallback()
+            self.update_message(1,"built advertise data object")
+
+            self.ad_callback=AdCallback()
             bluetooth_advertiser.startAdvertising(settings, data, self.ad_callback)
+            self.update_message(1,"advertising")
+
         except Exception as error:
             self.update_message(2,error)
-
-    def build(self):
-
-        # may not need
-        request_permissions([Permission.BLUETOOTH, Permission.BLUETOOTH_ADMIN, Permission.ACCESS_FINE_LOCATION])
+    
+    def blueteeth(self):
+        try:
+            # may not need
+            request_permissions([Permission.BLUETOOTH, Permission.BLUETOOTH_ADMIN, Permission.ACCESS_FINE_LOCATION])
+        except: # this is so I can run it on my laptop to test non-bluetooth stuff
+            pass
 
         result=self.setup_ble_server()
         if result:
@@ -155,20 +139,23 @@ class RemoteMouseApp(App):
             self.advertise()
         elif result==False:
             self.update_message(1,"bluetooth disabled")
+
+    def build(self):
         return MainWidget()
 
 # UI - currently just outputs touch pos onto the screen
 class MainWidget(Widget):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
-        self.zone=Scatter(do_translation=False,do_rotation=False,do_scale=False)
+        self.zone=Scatter(do_translation=False,do_rotation=False,do_scale=False) # to detect touches
         self.zone.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # when screen touched
-        self.out=Label()
-        self.out2=Label(size_hint=(0.9,None))
+        self.out=Label() # to display touch pos
+        self.out2=Label(size_hint=(0.9,None)) # to display logs
         self.add_widget(self.zone)
         self.add_widget(self.out)
         self.add_widget(self.out2)
-        Clock.schedule_interval(self.update,0.5)
+        Clock.schedule_interval(self.update,0.5) # for regular updates
+        App.get_running_app().blueteeth() # begin bluetooth process
     
     def read_mouse(self,caller,touch): # get touch_pos
         pos=(round(touch.pos[0]),round(touch.pos[1]))
