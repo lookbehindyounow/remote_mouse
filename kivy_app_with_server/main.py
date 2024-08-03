@@ -1,4 +1,5 @@
 from jnius import autoclass, PythonJavaClass, JavaClass, MetaJavaClass, java_method # remove all bar autoclass
+from android.permissions import request_permissions, Permission # this is not a real python library, it's handled at compile-time
 from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.scatter import Scatter
@@ -7,15 +8,28 @@ from kivy.clock import Clock
 
 # need java classes to do android stuff
 try:
-    Callback=autoclass('com.remotemouse.Callback') # need a callback object & BluetoothGattServerCallback is an abstract class
     Context=autoclass('android.content.Context')
     PythonActivity=autoclass('org.kivy.android.PythonActivity')
+
+    # bluetooth
     BluetoothAdapter=autoclass('android.bluetooth.BluetoothAdapter')
-    BluetoothManager=autoclass('android.bluetooth.BluetoothManager')
-    BluetoothGattServer=autoclass('android.bluetooth.BluetoothGattServer')
+    BluetoothManager=autoclass('android.bluetooth.BluetoothManager') # remove
+
+    # gatt server
+    GattCallback=autoclass('com.remotemouse.GattCallback') # need a gatt server callback object & BluetoothGattServerCallback is an abstract class
+    BluetoothGattServer=autoclass('android.bluetooth.BluetoothGattServer') # remove
     BluetoothGattServerCallback=autoclass('android.bluetooth.BluetoothGattServerCallback') # remove
     GattService=autoclass('android.bluetooth.BluetoothGattService')
     GattCharacteristic=autoclass('android.bluetooth.BluetoothGattCharacteristic')
+
+    # advertising - test code from chatgpt
+    AdCallback=autoclass('com.remotemouse.AdCallback') # need an advertise callback object & AdvertiseCallback is an abstract class
+    AdvertiseSettings = autoclass('android.bluetooth.le.AdvertiseSettings')
+    AdvertiseSettingsBuilder = autoclass('android.bluetooth.le.AdvertiseSettings$Builder')
+    AdvertiseData = autoclass('android.bluetooth.le.AdvertiseData')
+    AdvertiseDataBuilder = autoclass('android.bluetooth.le.AdvertiseData$Builder')
+    AdvertiseCallback = autoclass('android.bluetooth.le.AdvertiseCallback') # remove
+    BluetoothLeAdvertiser = autoclass('android.bluetooth.le.BluetoothLeAdvertiser') # remove
 except: # this is so I can run it on my laptop to test non-bluetooth stuff
     pass
 UUID=autoclass('java.util.UUID')
@@ -30,7 +44,7 @@ def uuid(id):
 # it doesn't work because "android/bluetooth/BluetoothGattServerCallback is not an interface"
 # & without __javainterfaces__ I get "MyBluetoothGattServerCallback has no attribute __javainterfaces__"
 # chatgpt gets stuck going back & forth like it's a catch 22
-print("HERE0")
+# print("HERE0")
 # try:
 #     print("HERE1a")
 #     class Callback(JavaClass):
@@ -56,7 +70,8 @@ class RemoteMouseApp(App):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.message="0\n\n"
-        self.callback=None
+        self.gatt_callback=None
+        self.ad_callback=None
     
     # updates formatted status/error message which we need stored as I can't see the console on my phone
     def update_message(self,part,new):
@@ -70,8 +85,10 @@ class RemoteMouseApp(App):
             self.update_message(0,"1")
         elif self.message[0]=="1":
             self.update_message(0,"0")
-        if self.callback:
-            self.update_message(2,self.callback.message)
+        if self.ad_callback:
+            self.update_message(2,self.ad_callback.message)
+        elif self.gatt_callback:
+            self.update_message(2,self.gatt_callback.message)
         return self.message
 
     def setup_ble_server(self):
@@ -83,8 +100,8 @@ class RemoteMouseApp(App):
             # Setup BLE GATT Server
             app_context=PythonActivity.mActivity
             bluetooth_manager=app_context.getSystemService(Context.BLUETOOTH_SERVICE) # object to start the server
-            self.callback=Callback() # need callback object to update message
-            self.gatt_server=bluetooth_manager.openGattServer(app_context,self.callback) # server
+            self.gatt_callback=GattCallback() # need gatt server callback object to update message
+            self.gatt_server=bluetooth_manager.openGattServer(app_context,self.gatt_callback) # server
             self.update_message(1,"passed manager/server")
 
             # Input data stream service and characteristics
@@ -103,11 +120,39 @@ class RemoteMouseApp(App):
             return True
         except Exception as error:
             self.update_message(2,error)
+    
+    def advertise(self): # chatgpt code
+        try:
+            bluetooth_advertiser = BluetoothAdapter.getDefaultAdapter().getBluetoothLeAdvertiser()
+            self.update_message(1,"made advertiser")
+            settings_builder = AdvertiseSettingsBuilder()
+            # options: ADVERTISE_MODE_LOW_LATENCY, ADVERTISE_MODE_BALANCED, ADVERTISE_MODE_BALANCED
+            settings_builder.setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            # options: ADVERTISE_TX_POWER_HIGH, ADVERTISE_TX_POWER_MEDIUM, ADVERTISE_TX_POWER_LOW, ADVERTISE_TX_POWER_ULTRA_LOW
+            settings_builder.setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+            settings_builder.setConnectable(True)
+            settings=settings_builder.build()
+            self.update_message(1,"built settings")
+            BluetoothAdapter.getDefaultAdapter().setName("remote_mouse")
+            self.update_message(1,"set name")
+            data_builder = AdvertiseDataBuilder()
+            data_builder.setIncludeDeviceName(True)
+            data=data_builder.build()
+            self.update_message(1,"built data")
+            self.ad_callback = AdCallback()
+            bluetooth_advertiser.startAdvertising(settings, data, self.ad_callback)
+        except Exception as error:
+            self.update_message(2,error)
 
     def build(self):
+
+        # may not need
+        request_permissions([Permission.BLUETOOTH, Permission.BLUETOOTH_ADMIN, Permission.ACCESS_FINE_LOCATION])
+
         result=self.setup_ble_server()
         if result:
             self.update_message(1,"server up")
+            self.advertise()
         elif result==False:
             self.update_message(1,"bluetooth disabled")
         return MainWidget()

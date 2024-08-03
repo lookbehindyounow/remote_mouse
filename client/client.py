@@ -1,4 +1,5 @@
 from bleak import BleakScanner
+import asyncio
 
 async def run():
     devices = await BleakScanner.discover()
@@ -6,5 +7,4 @@ async def run():
         print(f"Discovered device: {device.name} ({device.address})")
 
 # Run the discovery
-import asyncio
 asyncio.run(run())

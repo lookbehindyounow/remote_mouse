@@ -4,9 +4,9 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
 
-public class Callback extends BluetoothGattServerCallback {
+public class GattCallback extends BluetoothGattServerCallback {
     public String message;
-    public Callback(){
+    public GattCallback(){
         this.message="no devices attached yet";
     }
     
