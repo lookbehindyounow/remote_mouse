@@ -59,9 +59,7 @@ class RemoteMouseApp(App):
             self.update_message(0,"1")
         elif self.message[0]=="1":
             self.update_message(0,"0")
-        if self.ad_callback:
-            self.update_message(2,self.ad_callback.message)
-        elif self.gatt_callback:
+        if self.gatt_callback:
             self.update_message(2,self.gatt_callback.message)
         return self.message
 

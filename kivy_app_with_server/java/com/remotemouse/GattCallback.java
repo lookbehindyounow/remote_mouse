@@ -13,5 +13,6 @@ public class GattCallback extends BluetoothGattServerCallback {
     @Override
     public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
         this.message="device: "+device+", status: "+status+", new state: "+newState;
+        System.out.println(this.message);
     }
 }
