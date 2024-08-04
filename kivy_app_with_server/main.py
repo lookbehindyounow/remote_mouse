@@ -1,4 +1,5 @@
 from jnius import autoclass # this allows us to work with java classes so we can access android bluetooth functionality
+from struct import pack
 
 # UI stuff
 from kivy.app import App
@@ -19,11 +20,13 @@ try:
     BluetoothManager=autoclass('android.bluetooth.BluetoothManager') # remove
 
     # gatt server
+    GattService=autoclass('android.bluetooth.BluetoothGattService')
+    GattCharacteristic=autoclass('android.bluetooth.BluetoothGattCharacteristic')
+    GattDescriptor=autoclass('android.bluetooth.BluetoothGattDescriptor')
     GattCallback=autoclass('com.remotemouse.GattCallback') # need a gatt server callback object & BluetoothGattServerCallback is an abstract class
     BluetoothGattServer=autoclass('android.bluetooth.BluetoothGattServer') # remove
     BluetoothGattServerCallback=autoclass('android.bluetooth.BluetoothGattServerCallback') # remove
-    GattService=autoclass('android.bluetooth.BluetoothGattService')
-    GattCharacteristic=autoclass('android.bluetooth.BluetoothGattCharacteristic')
+    BluetoothDevice=autoclass('android.bluetooth.BluetoothDevice')
 
     # advertising
     AdCallback=autoclass('com.remotemouse.AdCallback') # need an advertise callback object & AdvertiseCallback is an abstract class
@@ -46,6 +49,25 @@ class RemoteMouseApp(App):
         self.message="0\n\n"
         self.gatt_callback=None
         self.ad_callback=None
+        try: # creating service and characteristics for input data stream
+            self.service=GattService(uuid(4500),GattService.SERVICE_TYPE_PRIMARY)
+            self.update_message(1,"made service")
+            self.characteristics=[]
+            for i in range(4):
+                self.characteristics.append(GattCharacteristic(uuid(i+4501),
+                    GattCharacteristic.PROPERTY_NOTIFY| # for characteristic to support BLE notifications
+                    GattCharacteristic.PROPERTY_READ, # allow client to read characteristic's value
+                    GattCharacteristic.PERMISSION_READ)) # allow client to read characteristic's value
+                self.characteristics[i].setValue(pack("b",0)) # initial value
+                descriptor=GattDescriptor(uuid(2902),GattDescriptor.PERMISSION_READ|GattDescriptor.PERMISSION_WRITE) # the client writes to this descriptor to request notifications - unsure if I need read
+                descriptor.setValue(GattDescriptor.ENABLE_NOTIFICATION_VALUE) # do I need this as well?
+                self.characteristics[i].addDescriptor(descriptor) # add descriptor to characteristic
+                print("HERE2",self.characteristics[i].getUuid().toString())
+                self.update_message(1,f"made characteristic {i+1}")
+                self.service.addCharacteristic(self.characteristics[i])
+                self.update_message(1,f"added characteristic {i+1}")
+        except Exception as error: # not on the laptop
+            self.update_message(2,error)
     
     # updates formatted status/error message which we need stored as I can't see the console on my phone
     def update_message(self,part,new):
@@ -73,25 +95,14 @@ class RemoteMouseApp(App):
             self.adapter.setName("remote_mouse")
             self.update_message(1,"set name")
 
-            # Setup BLE GATT Server
+            # Setup BLE GATT Server & add previously defined service
             app_context=PythonActivity.mActivity
             bluetooth_manager=app_context.getSystemService(Context.BLUETOOTH_SERVICE) # object to start the server
             self.gatt_callback=GattCallback() # need gatt server callback object to update message
             self.gatt_server=bluetooth_manager.openGattServer(app_context,self.gatt_callback) # server
+            self.gatt_callback.addServer(self.gatt_server) # the callback needs the server to respond to read requests
             self.update_message(1,"passed manager/server")
-
-            # Input data stream service and characteristics
-            service=GattService(uuid("4500"),GattService.SERVICE_TYPE_PRIMARY)
-            self.update_message(1,"made service")
-            characteristics=[]
-            for i in range(4):
-                characteristics.append(GattCharacteristic(uuid(f"450{i+1}"),
-                    GattCharacteristic.PROPERTY_NOTIFY, # for characteristic to support BLE notifications
-                    GattCharacteristic.PERMISSION_READ)) # allow client to read characteristic's value
-                self.update_message(1,f"made characteristic {i+1}")
-                service.addCharacteristic(characteristics[i])
-                self.update_message(1,f"added characteristic {i+1}")
-            self.gatt_server.addService(service)
+            self.gatt_server.addService(self.service)
             self.update_message(1,"added service")
             return True
         
@@ -124,7 +135,7 @@ class RemoteMouseApp(App):
         except Exception as error:
             self.update_message(2,error)
     
-    def blueteeth(self):
+    def blueteeth(self): # can probs stick this all in ble setup
         try:
             # may not need
             request_permissions([Permission.BLUETOOTH, Permission.BLUETOOTH_ADMIN, Permission.ACCESS_FINE_LOCATION])
@@ -145,6 +156,7 @@ class RemoteMouseApp(App):
 class MainWidget(Widget):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
+        self.app=App.get_running_app()
         self.zone=Scatter(do_translation=False,do_rotation=False,do_scale=False) # to detect touches
         self.zone.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # when screen touched
         self.out=Label() # to display touch pos
@@ -153,15 +165,23 @@ class MainWidget(Widget):
         self.add_widget(self.out)
         self.add_widget(self.out2)
         Clock.schedule_interval(self.update,0.5) # for regular updates
-        App.get_running_app().blueteeth() # begin bluetooth process
+        self.app.blueteeth() # begin bluetooth process - why is this here?
     
     def read_mouse(self,caller,touch): # get touch_pos
-        pos=(round(touch.pos[0]),round(touch.pos[1]))
+        pos=(round(touch.pos[0]),touch.pos[1])
         self.out.text=str(pos)
         self.out.pos=(self.width/2,self.height/2)
+        try: # not on the laptop
+            self.app.characteristics[0].setValue(pack("d",pos[1])) # package double into byte array
+            device=self.app.gatt_callback.device
+            if device:
+                print("HERE3")
+                self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristics[0],False)
+        except Exception as error:
+            self.app.update_message(2,error)
     
     def update(self,dt): # get bluetooth status/errors
-        self.out2.text=App.get_running_app().update()
+        self.out2.text=self.app.update()
         self.out2.pos=(self.width/2,self.height/4)
 
 RemoteMouseApp().run()
