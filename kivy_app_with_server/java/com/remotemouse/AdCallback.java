@@ -17,7 +17,6 @@ public class AdCallback extends AdvertiseCallback {
     @Override
     public void onStartFailure(int errorCode) {
         super.onStartFailure(errorCode); // may not be necessary
-        this.message=String.valueOf(errorCode);
-        System.out.println("HERE5 ADVERTISING START FAILURE");
+        this.message="couldn't start advertising, error code: "+String.valueOf(errorCode);
     }
 }

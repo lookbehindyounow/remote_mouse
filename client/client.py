@@ -1,55 +1,37 @@
-from bleak import BleakScanner, BleakClient
-import asyncio
-from struct import unpack
+from bleak import BleakScanner, BleakClient # for BLE scanning/client
+from asyncio import run, create_task, gather # a lot of BLE stuff is asynchronous
+from struct import unpack # to turn byte arrays into other types
 
-async def output(characteristic,data): # can maybe be lambda again once working
-    print("(----------------------------)")
-    print(type(data))
-
-async def connect(address):
-    async with BleakClient(address) as client:
-        print()
-        await client.connect()
-        if client.is_connected:
-            print("connected to remote_mouse server")
-            # services=await client.get_services()
-            for service in client.services:
-                print(f"Service UUID: {service.uuid}")
-                format=["d","b","b","b"] # first will be double rest will be 8-bit int
-                for i in range(4):
-                    characteristic=service.characteristics[i]
-                    print(f"Characteristic UUID: {characteristic.uuid}")
-                    print(f"Characteristic properties: {characteristic.properties}")
-                    value=await client.read_gatt_char(characteristic.uuid)
-                    print(format[i])
-                    print(unpack(format[i],value)[0])
-                    await client.start_notify(characteristic.uuid,output)
-            try:
-                while True:
-                    await update(client)
-                    await asyncio.sleep(1)
-            except KeyboardInterrupt:
-                for service in client.services:
-                    for characteristic in service.characteristics:
-                        await client.stop_notify(characteristic.uuid)
-                await client.disconnect()
-                print("disconnected")
-        else:
-            print("failed to connect to remote_mouse server")
-
-async def update(client):
-    for service in client.services:
-        print(unpack("d",await client.read_gatt_char(service.characteristics[0].uuid))[0])
-
-async def run():
-    devices=await BleakScanner.discover()
+async def scan(): # scan for devices
+    devices=await BleakScanner.discover() # scan
     found=False
     for device in devices:
         print(f"found {device.name} at {device.address}")
         if device.name=="remote_mouse":
             found=True
-            await connect(device.address)
+            server=device
+            break
     if not found:
         print("can't find remote_mouse server")
+    await connect(server.address)
 
-asyncio.run(run())
+async def connect(address): # connect to remote-mouse gatt server
+    async with BleakClient(address) as client: # create client
+        await client.connect() # connect
+        # await client.disconnect() to disconnect
+        if client.is_connected:
+            print("connected to remote_mouse server")
+            service=list(client.services)[0]
+            print(f"service UUID: {service.uuid}")
+            formats=["d","d","b","b"] # first two are doubles other two are bytes
+            tasks=[create_task(subscribe(client,service.characteristics[i],formats[i])) for i in range(4)]
+            await gather(*tasks)
+        else:
+            print("failed to connect to remote_mouse server")
+
+async def subscribe(client,characteristic,format):
+    print(f"subscribed to characteristic with UUID: {characteristic.uuid}")
+    await client.start_notify(characteristic,lambda characteristic,data: print(unpack(format,data)[0]))
+    # await client.stop_notify(uuid) to stop
+
+run(scan())
