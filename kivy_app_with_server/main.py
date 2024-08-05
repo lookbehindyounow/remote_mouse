@@ -120,7 +120,7 @@ class RemoteMouseApp(App): # app
 
             self.gatt_callback=GattCallback() # callback object for gatt server
             self.gatt_server=bluetooth_manager.openGattServer(app_context,self.gatt_callback) # create gatt server
-            self.gatt_callback.addServer(self.gatt_server) # the callback needs the server to respond to read requests
+            self.gatt_callback.setServer(self.gatt_server) # the callback needs the server to respond to read requests
             self.update_message(1,"created server")
 
             self.gatt_server.addService(self.service) # add previously defined service with characteristics to server
@@ -177,8 +177,8 @@ class MainWidget(Widget): # UI - currently just displays touch pos & log/status 
     def read_mouse(self,caller,touch): # on screen touch
         self.out.text=str(touch.pos) # display touch pos
         try:
-            self.app.characteristics[0].setValue(pack("d",pos[0])) # package double into byte array for new characteristic values
-            self.app.characteristics[1].setValue(pack("d",pos[1]))
+            self.app.characteristics[0].setValue(pack("d",touch.pos[0])) # package double into byte array for new characteristic values
+            self.app.characteristics[1].setValue(pack("d",touch.pos[1]))
             device=self.app.gatt_callback.device # client - or most recent client? unsure if callback handles disconnection
             if device: # if client connected, send notifications
                 self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristics[0],False)
@@ -186,7 +186,7 @@ class MainWidget(Widget): # UI - currently just displays touch pos & log/status 
         except Exception as error:
             self.app.update_message(2,error) # log error
     
-    def on_size(self,size):
+    def on_size(self,instance,size):
         self.out.pos=(self.width/2,self.height/2) # touch pos in middle of screen
         self.out2.pos=(self.width/2,self.height/4) # display below touch pos
     

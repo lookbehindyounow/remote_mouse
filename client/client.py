@@ -9,11 +9,10 @@ async def scan(): # scan for devices
         print(f"found {device.name} at {device.address}")
         if device.name=="remote_mouse":
             found=True
-            server=device
+            await connect(device.address)
             break
     if not found:
         print("can't find remote_mouse server")
-    await connect(server.address)
 
 async def connect(address): # connect to remote-mouse gatt server
     async with BleakClient(address) as client: # create client
