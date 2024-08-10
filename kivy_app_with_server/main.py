@@ -6,10 +6,10 @@ from math import floor # for button pos calc
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.scatter import Scatter
+from kivy.uix.widget import Widget
+from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.slider import Slider
-from kivy.uix.label import Label
 from kivy.metrics import dp
 from kivy.clock import Clock
 
@@ -63,8 +63,9 @@ class RemoteMouseApp(App): # app
 
             self.characteristics=[]
             # mouse x & y are floats
-            # left/right mouse/arrows can be 4 bits of a byte
-            # volume is 8-bit unsigned int (unsigned byte)
+            # left/right mouse/arrows are 2 bits of an unsigned byte (sends 0/1/2/3 when pressed)
+            # volume is 8-bit unsigned byte (unsigned for 0 -> 255 instead of -128 -> 127)
+            # can package volume & buttons into one byte & make volume 0 -> 63
             formats=["d","d","B","B"]
             for i in range(4):
                 self.characteristics.append(GattCharacteristic(uuid(i+4501), # characteristic
@@ -172,32 +173,57 @@ class MainWidget(BoxLayout): # UI
     def __init__(self,**kwargs):
         super().__init__(**kwargs) # init kivy widget stuff
         self.app=App.get_running_app() # get app
+        self.padding=dp(20)
+        self.spacing=dp(10)
 
-        self.mouse_pad=Scatter(do_translation=False,do_rotation=False,do_scale=False) # to detect touches
+        self.mouse_pad=Widget() # to detect touches
         self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
         self.add_widget(self.mouse_pad)
+
+        self.screen_logs=Label(valign="center") # to display log/status thing for debug
+        self.mouse_pad.add_widget(self.screen_logs)
+        Clock.schedule_once(lambda dt: self.on_size(None,None)) # initial set label pos
 
         self.button_container=GridLayout(rows=2,cols=2)
         self.buttons=["left mouse","right mouse","left arrow","right arrow"] # button text
         for i in range(4): # create buttons
-            self.buttons[i]=Button(text=self.buttons[i],size_hint=(0.5,0.5),pos_hint=(0.5*(i%2),0.5*(not floor(i/2))))
+            self.buttons[i]=Button(text=self.buttons[i])
             self.buttons[i].bind(on_press=lambda caller,i=i: self.press(caller,i))
             self.button_container.add_widget(self.buttons[i])
         self.add_widget(self.button_container)
 
-        self.volume=Slider(orientation="vertical",size_hint=(None,1),width=dp(50)) # can move args into on_size later
+        self.volume=Slider()
         self.volume.bind(value=self.set_vol)
         self.add_widget(self.volume)
 
-        self.screen_logs=Label(size_hint=(0.9,None)) # to display log/status thing for debug
-        self.add_widget(self.screen_logs)
-
-        Clock.schedule_interval(self.update,0.5) # for periodic updates to log/status thing
         self.app.setup() # begin bluetooth process - why is this in the widget & not the app?
+        Clock.schedule_interval(self.update,0.5) # for periodic updates to log/status thing
+
+    def on_size(self,caller,size):
+        if self.width>self.height: # landscape
+            self.orientation="horizontal"
+            self.volume.orientation="vertical"
+            self.volume.size_hint=(None,1)
+            self.volume.width=dp(50)
+        else: # portrait
+            self.orientation="vertical"
+            self.volume.orientation="horizontal"
+            self.volume.size_hint=(1,None)
+            self.volume.height=dp(50)
+        # when you rotate your phone it calls on_size before widget positions have updated
+        # so moving the log/status thing needs to be scheduled
+        Clock.schedule_once(self.place_label)
+    
+    def place_label(self,dt):
+        self.screen_logs.pos=self.mouse_pad.to_parent(0,0,True) # display log/status thing in mouse_pad
+        self.screen_logs.size=self.mouse_pad.size
+        self.screen_logs.text_size=self.mouse_pad.size
     
     def read_mouse(self,caller,touch): # handle mouse pad input
-        self.send(0,touch.pos[0])
-        self.send(1,touch.pos[1])
+        if self.mouse_pad.collide_point(*touch.pos): # only if touch pos is within mouse pad pos
+            x,y=self.mouse_pad.to_local(*touch.pos,True) # unsure if to_local or to_widget is better, only matters with more widget layers
+            self.send(0,x)
+            self.send(1,y)
     
     def press(self,caller,i): # handle button press
         self.send(2,i)
@@ -216,11 +242,8 @@ class MainWidget(BoxLayout): # UI
                 self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristics[char_i],False)
         except Exception as error:
             self.app.update_message(2,error) # log error
-
-    def on_size(self,caller,size):
-        self.screen_logs.pos=(self.width/2,self.height/2) # display in center
     
-    def update(self,dt): # update log/status thing
+    def update(self,dt): # update log/status thing for debug
         self.screen_logs.text=self.app.update() # get from app
 
 RemoteMouseApp().run() # instantiate & run (initialise & build) app

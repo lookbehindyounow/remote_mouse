@@ -29,9 +29,8 @@ async def connect(address): # connect to remote-mouse gatt server
             print("failed to connect to remote_mouse server")
 
 async def subscribe(client,characteristic,format):
-    if int(characteristic.uuid[7])>2: # ignore mouse pad input for debug
-        print(f"subscribed to characteristic with UUID: {characteristic.uuid}")
-        await client.start_notify(characteristic,lambda characteristic,data: print(unpack(format,data)[0]))
-        # await client.stop_notify(uuid) to stop
+    print(f"subscribed to characteristic with UUID: {characteristic.uuid}")
+    await client.start_notify(characteristic,lambda characteristic,data: print(unpack(format,data)[0]))
+    # await client.stop_notify(uuid) to stop
 
 run(scan())
