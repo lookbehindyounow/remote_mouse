@@ -178,6 +178,8 @@ class MainWidget(BoxLayout): # UI
 
         self.mouse_pad=Widget() # to detect touches
         self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
+        self.mouse_pad.bind(on_touch_up=self.reset_mouse)
+        self.reset_mouse(None,None)
         self.add_widget(self.mouse_pad)
 
         self.screen_logs=Label(valign="center") # to display log/status thing for debug
@@ -221,9 +223,16 @@ class MainWidget(BoxLayout): # UI
     
     def read_mouse(self,caller,touch): # handle mouse pad input
         if self.mouse_pad.collide_point(*touch.pos): # only if touch pos is within mouse pad pos
-            x,y=self.mouse_pad.to_local(*touch.pos,True) # unsure if to_local or to_widget is better, only matters with more widget layers
-            self.send(0,x)
-            self.send(1,y)
+            x,y=self.mouse_pad.to_local(*touch.pos,True) # get local coords
+            if self.x0!=None and self.y0!=None: # don't send first touch
+                dx=x-self.x0 # get direction
+                dy=y-self.y0
+                self.send(0,dx)
+                self.send(1,dy)
+            self.x0,self.y0=x,y
+    
+    def reset_mouse(self,caller,touch):
+        self.x0,self.y0=None,None
     
     def press(self,caller,i): # handle button press
         self.send(2,i)

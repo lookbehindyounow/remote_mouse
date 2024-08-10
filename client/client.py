@@ -1,6 +1,6 @@
 from bleak import BleakScanner, BleakClient # for BLE scanning/client
 from asyncio import run as async_run, create_task, gather # a lot of BLE stuff is asynchronous
-from pyautogui import size, position, moveTo, click, rightClick, press # to control laptop
+from pyautogui import moveRel, click, rightClick, press # to control laptop
 from subprocess import run as sub_run
 from struct import unpack # to turn byte arrays into other types
 
@@ -38,13 +38,12 @@ async def subscribe(client,characteristic,format):
 
 def handle_input(char_i,data,format):
     input=unpack(format,data)[0]
+    print(char_i,input)
     match int(char_i): # which characteristic
         case 1: # mouse x
-            # moveTo(data/size(),displayMousePosition()[1]) # this one for when input is scaled to screen size of (1,1)
-            moveTo(input,position()[1]) # temp version
+            moveRel(input,0)
         case 2: # mouse y
-            # moveTo(displayMousePosition()[1],data/size()) # this one for when input is scaled to screen size of (1,1)
-            moveTo(position()[0],input) # temp version
+            moveRel(0,-input) # y inverted cause mac screen coords start in top left
         case 3: # buttons
             match input:
                 case 0: # left mouse
@@ -56,6 +55,6 @@ def handle_input(char_i,data,format):
                 case 3: # right arrow
                     press("right")
         case 4: # volume
-            sub_run(["osascript","-e",f"set volume output volume {input/2.55}"])
+            sub_run(["osascript","-e",f"set volume output volume {input/2.55}"]) # runs applescript
 
 async_run(scan())
