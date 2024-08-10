@@ -1,11 +1,16 @@
 from jnius import autoclass # this allows us to work with java classes so we can access android bluetooth functionality
 from struct import pack # to turn variables into byte arrays
+from math import floor # for button pos calc
 
 # UI stuff
 from kivy.app import App
-from kivy.uix.widget import Widget
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scatter import Scatter
+from kivy.uix.button import Button
+from kivy.uix.slider import Slider
 from kivy.uix.label import Label
+from kivy.metrics import dp
 from kivy.clock import Clock
 
 # need java classes to do android stuff
@@ -57,7 +62,10 @@ class RemoteMouseApp(App): # app
             self.update_message(1,"made service")
 
             self.characteristics=[]
-            formats=["d","d","b","b"] # mouse x & y are floats, volume is 8-bit int & left/right mouse/arrows can be 4 bits of a byte
+            # mouse x & y are floats
+            # left/right mouse/arrows can be 4 bits of a byte
+            # volume is 8-bit unsigned int (unsigned byte)
+            formats=["d","d","B","B"]
             for i in range(4):
                 self.characteristics.append(GattCharacteristic(uuid(i+4501), # characteristic
                     GattCharacteristic.PROPERTY_NOTIFY| # for characteristic to support BLE notifications
@@ -88,7 +96,7 @@ class RemoteMouseApp(App): # app
         contents[part]=str(new)
         self.message=f"{contents[0]}\n{contents[1]}\n{contents[2]}"
         if part: # if it's not the 1|0 flip
-            print("HERE1",new) # log message update in console
+            print(f"HERE{part}",new) # log message update in console
 
     def update(self): # called by UI MainWidget to get log/status thing to display on screen for debug
         self.update_message(0,int(not int(self.message[0]))) # also handles the 1|0 flip
@@ -160,37 +168,59 @@ class RemoteMouseApp(App): # app
     def build(self):
         return MainWidget() # assign UI
 
-class MainWidget(Widget): # UI - currently just displays touch pos & log/status thing on the screen
+class MainWidget(BoxLayout): # UI
     def __init__(self,**kwargs):
         super().__init__(**kwargs) # init kivy widget stuff
         self.app=App.get_running_app() # get app
-        self.zone=Scatter(do_translation=False,do_rotation=False,do_scale=False) # to detect touches
-        self.zone.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
-        self.out=Label() # to display touch pos
-        self.out2=Label(size_hint=(0.9,None)) # to display log/status thing
-        self.add_widget(self.zone)
-        self.add_widget(self.out)
-        self.add_widget(self.out2)
+
+        self.mouse_pad=Scatter(do_translation=False,do_rotation=False,do_scale=False) # to detect touches
+        self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
+        self.add_widget(self.mouse_pad)
+
+        self.button_container=GridLayout(rows=2,cols=2)
+        self.buttons=["left mouse","right mouse","left arrow","right arrow"] # button text
+        for i in range(4): # create buttons
+            self.buttons[i]=Button(text=self.buttons[i],size_hint=(0.5,0.5),pos_hint=(0.5*(i%2),0.5*(not floor(i/2))))
+            self.buttons[i].bind(on_press=lambda caller,i=i: self.press(caller,i))
+            self.button_container.add_widget(self.buttons[i])
+        self.add_widget(self.button_container)
+
+        self.volume=Slider(orientation="vertical",size_hint=(None,1),width=dp(50)) # can move args into on_size later
+        self.volume.bind(value=self.set_vol)
+        self.add_widget(self.volume)
+
+        self.screen_logs=Label(size_hint=(0.9,None)) # to display log/status thing for debug
+        self.add_widget(self.screen_logs)
+
         Clock.schedule_interval(self.update,0.5) # for periodic updates to log/status thing
-        self.app.setup() # begin bluetooth process - why is this here?
+        self.app.setup() # begin bluetooth process - why is this in the widget & not the app?
     
-    def read_mouse(self,caller,touch): # on screen touch
-        self.out.text=str(touch.pos) # display touch pos
+    def read_mouse(self,caller,touch): # handle mouse pad input
+        self.send(0,touch.pos[0])
+        self.send(1,touch.pos[1])
+    
+    def press(self,caller,i): # handle button press
+        self.send(2,i)
+    
+    def set_vol(self,caller,value): # handle volume slider input
+        volume=floor(2.56*value)
+        if volume==256: volume=255 # handle edge case so it fits into unsigned byte
+        self.send(3,volume)
+    
+    def send(self,char_i,value): # update characteristic & notify client
+        format=["d","d","B","B"][char_i] # first two are doubles other two are unsigned bytes
         try:
-            self.app.characteristics[0].setValue(pack("d",touch.pos[0])) # package double into byte array for new characteristic values
-            self.app.characteristics[1].setValue(pack("d",touch.pos[1]))
+            self.app.characteristics[char_i].setValue(pack(format,value)) # package double into byte array for new characteristic values
             device=self.app.gatt_callback.device # client - or most recent client? unsure if callback handles disconnection
-            if device: # if client connected, send notifications
-                self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristics[0],False)
-                self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristics[1],False)
+            if device: # send notifications only if client connected
+                self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristics[char_i],False)
         except Exception as error:
             self.app.update_message(2,error) # log error
-    
-    def on_size(self,instance,size):
-        self.out.pos=(self.width/2,self.height/2) # touch pos in middle of screen
-        self.out2.pos=(self.width/2,self.height/4) # display below touch pos
+
+    def on_size(self,caller,size):
+        self.screen_logs.pos=(self.width/2,self.height/2) # display in center
     
     def update(self,dt): # update log/status thing
-        self.out2.text=self.app.update() # get from app
+        self.screen_logs.text=self.app.update() # get from app
 
 RemoteMouseApp().run() # instantiate & run (initialise & build) app
