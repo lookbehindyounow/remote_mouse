@@ -1,6 +1,7 @@
 from jnius import autoclass # this allows us to work with java classes so we can access android bluetooth functionality
 from struct import pack # to turn variables into byte arrays
 from math import floor # for button pos calc
+from time import time # for notification frequency logging
 
 # UI stuff
 from kivy.app import App
@@ -102,7 +103,7 @@ class RemoteMouseApp(App): # app
     def update(self): # called by UI MainWidget to get log/status thing to display on screen for debug
         self.update_message(0,int(not int(self.message[0]))) # also handles the 1|0 flip
         if self.gatt_callback: # if gatt callback object exists yet & isn't still None
-            self.update_message(2,self.gatt_callback.message) # update connection state
+            self.update_message(1,self.gatt_callback.message) # update connection state
         return self.message
 
     def setup(self):
@@ -175,6 +176,7 @@ class MainWidget(BoxLayout): # UI
         self.app=App.get_running_app() # get app
         self.padding=dp(20)
         self.spacing=dp(10)
+        self.prev_time=time()
 
         self.mouse_pad=Widget() # to detect touches
         self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
@@ -228,7 +230,7 @@ class MainWidget(BoxLayout): # UI
                 dx=x-self.x0 # get direction
                 dy=y-self.y0
                 self.send(0,dx)
-                self.send(1,dy)
+                self.send(1,-dy) # y inverted cause mac screen coords start in top left
             self.x0,self.y0=x,y
     
     def reset_mouse(self,caller,touch):
@@ -248,7 +250,11 @@ class MainWidget(BoxLayout): # UI
             self.app.characteristics[char_i].setValue(pack(format,value)) # package double into byte array for new characteristic values
             device=self.app.gatt_callback.device # client - or most recent client? unsure if callback handles disconnection
             if device: # send notifications only if client connected
-                self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristics[char_i],False)
+                self.app.gatt_server.notifyCharacteristicChanged(
+                    device,self.app.characteristics[char_i],False)#,pack(format,value))
+                new_time=time()
+                print(f"MESSAGE for characteristic {char_i} at {new_time-self.prev_time}")
+                self.prev_time=new_time
         except Exception as error:
             self.app.update_message(2,error) # log error
     
