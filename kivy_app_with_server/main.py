@@ -62,32 +62,25 @@ class RemoteMouseApp(App): # app
             self.service=GattService(uuid(4500),GattService.SERVICE_TYPE_PRIMARY) # service
             self.update_message(1,"made service")
 
-            self.characteristics=[]
-            # mouse x & y are floats
-            # left/right mouse/arrows are 2 bits of an unsigned byte (sends 0/1/2/3 when pressed)
-            # volume is 8-bit unsigned byte (unsigned for 0 -> 255 instead of -128 -> 127)
-            # can package volume & buttons into one byte & make volume 0 -> 63
-            formats=["d","d","B","B"]
-            for i in range(4):
-                self.characteristics.append(GattCharacteristic(uuid(i+4501), # characteristic
-                    GattCharacteristic.PROPERTY_NOTIFY| # for characteristic to support BLE notifications
-                    GattCharacteristic.PROPERTY_READ, # allow client to read characteristic's value - may not need with notifications
-                    GattCharacteristic.PERMISSION_READ)) # allow client to read characteristic's value - may not need with notifications
-                self.update_message(1,f"made characteristic with UUID: {uuid(i+4501)}")
+            self.characteristic=GattCharacteristic(uuid(4500), # characteristic
+                GattCharacteristic.PROPERTY_NOTIFY| # for characteristic to support BLE notifications
+                GattCharacteristic.PROPERTY_READ, # allow client to read characteristic's value - may not need with notifications
+                GattCharacteristic.PERMISSION_READ) # allow client to read characteristic's value - may not need with notifications
+            self.update_message(1,f"made characteristic with UUID: {uuid(4500)}")
 
-                self.characteristics[i].setValue(pack(formats[i],0)) # initial value, pack into bye array
-                self.update_message(1,f"set initial value")
+            self.characteristic.setValue(pack("H",0)) # initial value, pack into bye array
+            self.update_message(1,f"set initial value")
 
-                # Client Characteristic Configuration Descriptor - unsure if it needs PERMISSION_READ
-                descriptor=GattDescriptor(uuid(2902),GattDescriptor.PERMISSION_READ|GattDescriptor.PERMISSION_WRITE)
-                # the client writes to this^ descriptor to request notifications & it has to have that specific UUID
-                descriptor.setValue(GattDescriptor.ENABLE_NOTIFICATION_VALUE) # may not be necessary 
-                self.update_message(1,f"made CCCD")
-                self.characteristics[i].addDescriptor(descriptor) # add descriptor to characteristic
-                self.update_message(1,f"added CCCD to characteristic")
+            # Client Characteristic Configuration Descriptor - unsure if it needs PERMISSION_READ
+            descriptor=GattDescriptor(uuid(2902),GattDescriptor.PERMISSION_READ|GattDescriptor.PERMISSION_WRITE)
+            # the client writes to this^ descriptor to request notifications & it has to have that specific UUID
+            descriptor.setValue(GattDescriptor.ENABLE_NOTIFICATION_VALUE) # may not be necessary 
+            self.update_message(1,f"made CCCD")
+            self.characteristic.addDescriptor(descriptor) # add descriptor to characteristic
+            self.update_message(1,f"added CCCD to characteristic")
 
-                self.service.addCharacteristic(self.characteristics[i])
-                self.update_message(1,f"added characteristic to service")
+            self.service.addCharacteristic(self.characteristic)
+            self.update_message(1,f"added characteristic to service")
 
         except Exception as error:
             self.update_message(2,error) # log error
@@ -173,10 +166,10 @@ class RemoteMouseApp(App): # app
 class MainWidget(BoxLayout): # UI
     def __init__(self,**kwargs):
         super().__init__(**kwargs) # init kivy widget stuff
+        self.input_buffer=0 # this is where the current input will be written to before it's packaged into 2 bytes & sent
         self.app=App.get_running_app() # get app
         self.padding=dp(20)
         self.spacing=dp(10)
-        self.prev_time=time()
 
         self.mouse_pad=Widget() # to detect touches
         self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
@@ -188,17 +181,14 @@ class MainWidget(BoxLayout): # UI
         self.mouse_pad.add_widget(self.screen_logs)
         Clock.schedule_once(lambda dt: self.on_size(None,None)) # initial set label pos
 
-        self.button_container=GridLayout(rows=2,cols=2)
-        self.buttons=["left mouse","right mouse","left arrow","right arrow"] # button text
-        for i in range(4): # create buttons
+        self.button_container=GridLayout()
+        self.buttons=["left mouse","right mouse","left arrow","right arrow","volume up","volume down"] # button text
+        for i in range(6): # create buttons
             self.buttons[i]=Button(text=self.buttons[i])
-            self.buttons[i].bind(on_press=lambda caller,i=i: self.press(caller,i))
+            self.buttons[i].i=i
+            self.buttons[i].bind(on_press=self.press,on_release=self.release)
             self.button_container.add_widget(self.buttons[i])
         self.add_widget(self.button_container)
-
-        self.volume=Slider()
-        self.volume.bind(value=self.set_vol)
-        self.add_widget(self.volume)
 
         self.app.setup() # begin bluetooth process - why is this in the widget & not the app?
         Clock.schedule_interval(self.update,0.5) # for periodic updates to log/status thing
@@ -206,14 +196,15 @@ class MainWidget(BoxLayout): # UI
     def on_size(self,caller,size):
         if self.width>self.height: # landscape
             self.orientation="horizontal"
-            self.volume.orientation="vertical"
-            self.volume.size_hint=(None,1)
-            self.volume.width=dp(50)
+            self.button_container.clear_widgets()
+            self.button_container.rows=2
+            # order of buttons is different for landscape
+            [self.button_container.add_widget(self.buttons[i]) for i in [0,1,4,2,3,5]]
         else: # portrait
             self.orientation="vertical"
-            self.volume.orientation="horizontal"
-            self.volume.size_hint=(1,None)
-            self.volume.height=dp(50)
+            self.button_container.clear_widgets()
+            self.button_container.rows=3
+            [self.button_container.add_widget(self.buttons[i]) for i in range(6)]
         # when you rotate your phone it calls on_size before widget positions have updated
         # so moving the log/status thing needs to be scheduled
         Clock.schedule_once(self.place_label)
@@ -225,36 +216,42 @@ class MainWidget(BoxLayout): # UI
     
     def read_mouse(self,caller,touch): # handle mouse pad input
         if self.mouse_pad.collide_point(*touch.pos): # only if touch pos is within mouse pad pos
-            x,y=self.mouse_pad.to_local(*touch.pos,True) # get local coords
+            x,y=self.mouse_pad.to_local(*touch.pos,True) # get coords relative to mouse pad origin
+            x,y=floor(x),floor(y) # to int (round down to allow for slightly easier micro-movements)
             if self.x0!=None and self.y0!=None: # don't send first touch
-                dx=x-self.x0 # get direction
+                dx=x-self.x0 # get x & y direction (ints)
                 dy=y-self.y0
-                self.send(0,dx)
-                self.send(1,-dy) # y inverted cause mac screen coords start in top left
-            self.x0,self.y0=x,y
+
+                self.input_buffer&=63 # keep only last 6 bits - wipe pos data (first 10 bits) to 0s
+                if dx<0: self.input_buffer|=32768 # bit 1 is sign bit for dx
+                if dy>0: self.input_buffer|=1024 # bit 6 is sign bit for dy (inverted cause mac screen coords start in top left)
+
+                dx=min(abs(dx),15) # get x & y direction magnitude capped at 15 (to fit into 4 bits each)
+                dy=min(abs(dy),15)
+                self.input_buffer|=(dx<<11)|(dy<<6) # put 4 bit representations of dx & dy into places 2-5 & 7-10 respectively
+
+                self.send()
+            self.x0,self.y0=x,y # update last position for next frame's direction
     
-    def reset_mouse(self,caller,touch):
+    def reset_mouse(self,caller,touch): # re-initialise mouse tracking at end of touch
         self.x0,self.y0=None,None
+        self.input_buffer&=63 # wipe pos data (first 10 bits) to 0s
     
-    def press(self,caller,i): # handle button press
-        self.send(2,i)
+    def press(self,caller): # handle button press
+        self.input_buffer|=(32>>caller.i) # set relevant button bit (positions 11-16) to 1
+        self.send()
     
-    def set_vol(self,caller,value): # handle volume slider input
-        volume=floor(2.56*value)
-        if volume==256: volume=255 # handle edge case so it fits into unsigned byte
-        self.send(3,volume)
+    def release(self,caller): # handle button press
+        self.input_buffer&=65535-(32>>caller.i) # set relevant button bit (positions 11-16) to 0
+        self.send()
     
-    def send(self,char_i,value): # update characteristic & notify client
-        format=["d","d","B","B"][char_i] # first two are doubles other two are unsigned bytes
+    def send(self): # update characteristic & notify client
         try:
-            self.app.characteristics[char_i].setValue(pack(format,value)) # package double into byte array for new characteristic values
+            self.app.characteristic.setValue(pack("H",self.input_buffer)) # package double into byte array for new characteristic values
             device=self.app.gatt_callback.device # client - or most recent client? unsure if callback handles disconnection
             if device: # send notifications only if client connected
                 self.app.gatt_server.notifyCharacteristicChanged(
-                    device,self.app.characteristics[char_i],False)#,pack(format,value))
-                new_time=time()
-                print(f"MESSAGE for characteristic {char_i} at {new_time-self.prev_time}")
-                self.prev_time=new_time
+                    device,self.app.characteristic,False)
         except Exception as error:
             self.app.update_message(2,error) # log error
     
