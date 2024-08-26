@@ -4,3 +4,4 @@ kivy_app_with_server/.buildozer
 __pycache__
 client/client
 .vscode
+client/client.dSYM

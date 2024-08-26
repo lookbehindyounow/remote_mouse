@@ -44,8 +44,8 @@ try: # but these would all throw errors when testing UI on the laptop, hence "tr
     AdvertiseDataBuilder=autoclass('android.bluetooth.le.AdvertiseData$Builder')
     AdvertiseCallback=autoclass('android.bluetooth.le.AdvertiseCallback') # may not be necessary, is extended by AdCallback
     BluetoothLeAdvertiser=autoclass('android.bluetooth.le.BluetoothLeAdvertiser') # may not be necessary, never explicitly used but is used
-
-except:
+    ParcelUUID=autoclass("android.os.ParcelUuid") # UUIDs need to be parcel UUIDs for advertising?
+except: # so importing the android classes don't throw errors when testing ui on my mac
     pass
 
 UUID=autoclass('java.util.UUID') # data type
@@ -149,7 +149,7 @@ class RemoteMouseApp(App): # app
             self.update_message(1,"built advertise settings object")
 
             data_builder=AdvertiseDataBuilder() # can we instantiate AdvertiseData without the builder?
-            data_builder.setIncludeDeviceName(True)
+            data_builder.setIncludeDeviceName(True).addServiceUuid(ParcelUUID(uuid(4500)))
             data=data_builder.build() # data object for advertiser
             self.update_message(1,"built advertise data object")
 

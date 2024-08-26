@@ -11,6 +11,7 @@ class Client:
         self.mouse_down=False
         self.mouse=Mouse()
         self.keyboard=Keyboard()
+        self.connection_time=None
 
     async def scan(self,target): # scan for devices
         devices=await BleakScanner.discover() # scan, this part takes a while
@@ -25,6 +26,7 @@ class Client:
         await self.bclient.connect() # connect to server, this part takes a while
         # await self.bclient.disconnect() to disconnect
         if self.bclient.is_connected:
+            self.connection_time=time()
             print(f"connected to {server.name} server\n\tServices:")
             services=list(self.bclient.services)
             [print(f"\t\tservice UUID: {service.uuid}") for service in services]
@@ -36,7 +38,7 @@ class Client:
     async def subscribe(self,characteristics):
         print()
         [print(f"subscribing to characteristic with UUID: {characteristic.uuid}") for characteristic in characteristics]
-        await gather(*[create_task(self.bclient.start_notify(characteristic,self.set_buffer)) for characteristic in characteristics]) # runs until stopped
+        await gather(*[self.bclient.start_notify(characteristic,self.set_buffer) for characteristic in characteristics]) # runs until stopped
 
     def set_buffer(self,characteristic,data):
         self.buffer=data
@@ -69,15 +71,25 @@ class Client:
                 self.keyboard.press(Key.media_volume_down) if input&1 else self.keyboard.release(Key.media_volume_down)
             await sleep(0.01)
     
+    async def stay_awake(self,dummy_characteristic_uuid):
+        while True:
+            print(f"reading characteristic {dummy_characteristic_uuid} to stay awake...")
+            dummy_characteristic_value=await self.bclient.read_gatt_char(dummy_characteristic_uuid)
+            print(f"characteristic {dummy_characteristic_uuid} value: {dummy_characteristic_value}")
+            await sleep(2)
+    
     async def run(self):
         while True:
             try:
                 remote_mouse_server=await self.scan("remote_mouse")
                 if remote_mouse_server:
                     remote_mouse_services=await self.connect(remote_mouse_server)
-                    await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input())
+                    await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input(),self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
             except Exception as error:
                 print()
+                if self.connection_time:
+                    print(f"connected for {time()-self.connection_time}s") # consistantly disconnects after 30s
+                    self.connection_time=None
                 print("error:",error)
             print("starting again")
             print("=====================================")
