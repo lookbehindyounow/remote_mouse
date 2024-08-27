@@ -14,6 +14,7 @@ class Client:
         self.connection_time=None
 
     async def scan(self,target): # scan for devices
+        print("Scanning...")
         devices=await BleakScanner.discover() # scan, this part takes a while
         for device in devices:
             if device.name==target:
@@ -27,10 +28,10 @@ class Client:
         # await self.bclient.disconnect() to disconnect
         if self.bclient.is_connected:
             self.connection_time=time()
-            print(f"connected to {server.name} server\n\tServices:")
+            print(f"connected to {server.name} server\nServices:")
             services=list(self.bclient.services)
-            [print(f"\t\tservice UUID: {service.uuid}") for service in services]
-            [[print(f"\t\t\tcharacteristic UUID: {characteristic.uuid}") for characteristic in service.characteristics] for service in services]
+            [print(f"  service UUID: {service.uuid}\n  Characteristics:") for service in services]
+            [[print(f"    characteristic UUID: {characteristic.uuid}") for characteristic in service.characteristics] for service in services]
             return services
         print(f"failed to connect to {server.name} server")
         return None
@@ -71,12 +72,12 @@ class Client:
                 self.keyboard.press(Key.media_volume_down) if input&1 else self.keyboard.release(Key.media_volume_down)
             await sleep(0.01)
     
-    async def stay_awake(self,dummy_characteristic_uuid):
-        while True:
-            print(f"reading characteristic {dummy_characteristic_uuid} to stay awake...")
-            dummy_characteristic_value=await self.bclient.read_gatt_char(dummy_characteristic_uuid)
-            print(f"characteristic {dummy_characteristic_uuid} value: {dummy_characteristic_value}")
-            await sleep(2)
+    # async def stay_awake(self,dummy_characteristic_uuid):
+    #     while True:
+    #         print(f"reading characteristic {dummy_characteristic_uuid} to stay awake...")
+    #         dummy_characteristic_value=await self.bclient.read_gatt_char(dummy_characteristic_uuid)
+    #         print(f"characteristic {dummy_characteristic_uuid} value: {dummy_characteristic_value}")
+    #         await sleep(2)
     
     async def run(self):
         while True:
@@ -84,11 +85,16 @@ class Client:
                 remote_mouse_server=await self.scan("remote_mouse")
                 if remote_mouse_server:
                     remote_mouse_services=await self.connect(remote_mouse_server)
-                    await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input(),self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
+                    # while True: # testing if connection remains stable while not subscribed 
+                    #     data=await self.bclient.read_gatt_char(remote_mouse_services[0].characteristics[0].uuid)
+                    #     value=unpack("H",data)[0]
+                    #     print(f"{value:016b}")
+                    #     await sleep(30)
+                    await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input())#,self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
             except Exception as error:
                 print()
                 if self.connection_time:
-                    print(f"connected for {time()-self.connection_time}s") # consistantly disconnects after 30s
+                    print(f"connected for {time()-self.connection_time}s") # consistently disconnects after 30s
                     self.connection_time=None
                 print("error:",error)
             print("starting again")
