@@ -5,18 +5,20 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGattServer; // this can go if we don't need read requests
 import android.bluetooth.BluetoothGattService; // probably don't need
 import android.bluetooth.BluetoothGattCharacteristic; // this can go if we don't need read requests
+import com.remotemouse.IJavaMessenger; // may ot need this cause it's same package
 
 public class GattCallback extends BluetoothGattServerCallback{
-    public String message; // connection state; accessed in the python
     public BluetoothDevice device; // need the connected device to send notifications to; accessed in the python
+    public IJavaMessenger javaMessenger;
     private BluetoothGattServer gattServer; // need the server to respond to read requests
-    public GattCallback(){
-        this.message="no devices attached yet";
+    public GattCallback(IJavaMessenger javaMessenger){
+        System.out.println("HERE3 GattCallback constructor running");
+        this.javaMessenger=javaMessenger;
     }
     
     @Override // does this also run on disconnect or is there another method to extend?
     public void onConnectionStateChange(BluetoothDevice device, int status, int newState){
-        this.message="device: "+device+", status: "+status+", new state: "+newState;
+        this.javaMessenger.callInPython("device: "+device+", status: "+status+", new state: "+newState);
         this.device=device;
     }
 

@@ -5,3 +5,5 @@ __pycache__
 client/client
 .vscode
 client/client.dSYM
+jnius_microcosm/bin
+jnius_microcosm/.buildozer

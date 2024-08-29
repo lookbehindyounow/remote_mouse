@@ -1,4 +1,4 @@
-from jnius import autoclass # this allows us to work with java classes so we can access android bluetooth functionality
+from jnius import autoclass, PythonJavaClass, java_method # this allows us to work with java classes so we can access android bluetooth functionality
 from struct import pack # to turn variables into byte arrays
 from math import floor # for button pos calc
 from time import time # for notification frequency logging
@@ -52,11 +52,21 @@ UUID=autoclass('java.util.UUID') # data type
 def uuid(id): # bluetooth SIG standard format for UUIDs: 0000xxxx-0000-1000-8000-00805f9b34fb
     return UUID.fromString(f"0000{id}-0000-1000-8000-00805f9b34fb")
 
+class JavaMessenger(PythonJavaClass):
+    __javainterfaces__=["com/remotemouse/IJavaMessenger"]
+    # def __init__(self,app):
+    #     self.app=app
+
+    @java_method("(Ljava/lang/String;)V")
+    def callInPython(self,message):
+        # self.app.update_message(1,message)
+        print(message)
+
 class RemoteMouseApp(App): # app
     def __init__(self,**kwargs):
+        self.start_time=time()
         super().__init__(**kwargs) # init kivy app stuff
-        self.message="0\n\n" # effectively a 3 section log/status thing displayed on screen for debug
-        self.gatt_callback=None # is accessed in update() which is called by MainWidget periodically so needs to be defined
+        self.message="\n\n" # effectively a 3 section log/status thing displayed on screen for debug
 
         try: # creating service and characteristics for input data stream, android only hence "try"
             self.service=GattService(uuid(4500),GattService.SERVICE_TYPE_PRIMARY) # service
@@ -65,42 +75,41 @@ class RemoteMouseApp(App): # app
             self.characteristic=GattCharacteristic(uuid(4500), # characteristic
                 GattCharacteristic.PROPERTY_NOTIFY| # for characteristic to support BLE notifications
                 GattCharacteristic.PROPERTY_READ, # allow client to read characteristic's value - may not need with notifications
-                GattCharacteristic.PERMISSION_READ) # allow client to read characteristic's value - may not need with notifications
+                GattCharacteristic.PERMISSION_READ| # allow client to read characteristic's value - may not need with notifications
+                GattCharacteristic.PERMISSION_WRITE) # experimenting with Client.stay_awake()
             self.update_message(1,f"made characteristic with UUID: {uuid(4500)}")
 
             self.characteristic.setValue(pack("H",0)) # initial value, pack into bye array
-            self.update_message(1,f"set initial value")
+            self.update_message(1,"set initial value")
 
             # Client Characteristic Configuration Descriptor - unsure if it needs PERMISSION_READ
             descriptor=GattDescriptor(uuid(2902),GattDescriptor.PERMISSION_READ|GattDescriptor.PERMISSION_WRITE)
             # the client writes to this^ descriptor to request notifications & it has to have that specific UUID
             descriptor.setValue(GattDescriptor.ENABLE_NOTIFICATION_VALUE) # may not be necessary 
-            self.update_message(1,f"made CCCD")
+            self.update_message(1,"made CCCD")
             self.characteristic.addDescriptor(descriptor) # add descriptor to characteristic
-            self.update_message(1,f"added CCCD to characteristic")
+            self.update_message(1,"added CCCD to characteristic")
 
             self.service.addCharacteristic(self.characteristic)
-            self.update_message(1,f"added characteristic to service")
+            self.update_message(1,"added characteristic to service")
 
         except Exception as error:
             self.update_message(2,error) # log error
     
     def update_message(self,part,new): # update section of log/status thing displayed on screen for debug
-        # 3 lines, top is 1|0 & flips twice a second to show app isn't frozen, middle is setup status & bottom is error/connection state
+        # 3 lines, top is data to send as byte[2] characteristic, middle is just general logs & bottom is errors
         contents=self.message.split("\n")
-        contents[part]=str(new)
+        contents[part]=new
         self.message=f"{contents[0]}\n{contents[1]}\n{contents[2]}"
-        if part: # if it's not the 1|0 flip
-            print(f"HERE{part}",new) # log message update in console
-
-    def update(self): # called by UI MainWidget to get log/status thing to display on screen for debug
-        self.update_message(0,int(not int(self.message[0]))) # also handles the 1|0 flip
-        if self.gatt_callback: # if gatt callback object exists yet & isn't still None
-            self.update_message(1,self.gatt_callback.message) # update connection state
-        return self.message
+        print(f"HERE{part}",new) # log message update in console
+        try:
+            self.ui.screen_logs.text=self.message
+        except AttributeError:
+            print("HERE3 log no log")
 
     def setup(self):
-        try:
+        # try:
+        if True:
             # may not need to request permissions at runtime but this is where it happens
             request_permissions([Permission.BLUETOOTH,Permission.BLUETOOTH_ADMIN,Permission.ACCESS_FINE_LOCATION])
 
@@ -121,7 +130,11 @@ class RemoteMouseApp(App): # app
             bluetooth_manager=app_context.getSystemService(Context.BLUETOOTH_SERVICE) # getting android's bluetooth manager
             self.update_message(1,"got bluetooth manager")
 
-            self.gatt_callback=GattCallback() # callback object for gatt server
+            self.java_messenger=JavaMessenger()
+            self.java_messenger.callInPython("HERE3 JavaMessenger working in python")
+            # self.java_messenger=autoclass("com.remotemouse.JavaMessenger")()
+            # self.java_messenger.callInPython("HERE3 dummy JavaMessenger defined in java working in python as autoclass")
+            self.gatt_callback=GattCallback(self.java_messenger) # callback object for gatt server
             self.gatt_server=bluetooth_manager.openGattServer(app_context,self.gatt_callback) # create gatt server
             self.gatt_callback.setServer(self.gatt_server) # the callback needs the server to respond to read requests
             self.update_message(1,"created server")
@@ -131,8 +144,8 @@ class RemoteMouseApp(App): # app
 
             self.advertise() # make discoverable
 
-        except Exception as error:
-            self.update_message(2,error) # log error
+        # except Exception as error:
+        #     self.update_message(2,error) # log error
     
     def advertise(self): # make discoverable
         try:
@@ -153,21 +166,23 @@ class RemoteMouseApp(App): # app
             data=data_builder.build() # data object for advertiser
             self.update_message(1,"built advertise data object")
 
-            ad_callback=AdCallback() # callback object for advertiser - remember to check logs from this object when debugging
-            bluetooth_advertiser.startAdvertising(settings, data, ad_callback)
+            self.ad_callback=AdCallback(self.java_messenger) # callback object for advertiser - remember to check logs from this object when debugging
+            bluetooth_advertiser.startAdvertising(settings,data,self.ad_callback)
             self.update_message(1,"started advertising")
 
         except Exception as error:
             self.update_message(2,error) # log error
 
     def build(self):
-        return MainWidget() # assign UI
+        self.ui=MainWidget(self)
+        return self.ui # give kivy the ui
 
 class MainWidget(BoxLayout): # UI
-    def __init__(self,**kwargs):
+    def __init__(self,app,**kwargs):
         super().__init__(**kwargs) # init kivy widget stuff
         self.input_buffer=0 # this is where the current input will be written to before it's packaged into 2 bytes & sent
-        self.app=App.get_running_app() # get app
+        # self.app=App.get_running_app() # get app
+        self.app=app # get app
         self.padding=dp(20)
         self.spacing=dp(10)
 
@@ -179,7 +194,8 @@ class MainWidget(BoxLayout): # UI
 
         self.screen_logs=Label(valign="center") # to display log/status thing for debug
         self.mouse_pad.add_widget(self.screen_logs)
-        Clock.schedule_once(lambda dt: self.on_size(None,None)) # initial set label pos
+        self.app.update_message(1,"screen logs running")
+        Clock.schedule_once(lambda event: self.on_size(None,None)) # initial set label pos
 
         self.button_container=GridLayout()
         self.buttons=["left mouse","right mouse","left arrow","right arrow","volume up","volume down"] # button text
@@ -191,7 +207,6 @@ class MainWidget(BoxLayout): # UI
         self.add_widget(self.button_container)
 
         self.app.setup() # begin bluetooth process - why is this in the widget & not the app?
-        Clock.schedule_interval(self.update,0.5) # for periodic updates to log/status thing
 
     def on_size(self,caller,size):
         if self.width>self.height: # landscape
@@ -246,16 +261,13 @@ class MainWidget(BoxLayout): # UI
         self.send()
     
     def send(self): # update characteristic & notify client
+        self.app.update_message(0,f"{self.input_buffer:016b}") # send input to app logs
         try:
             self.app.characteristic.setValue(pack("H",self.input_buffer)) # package double into byte array for new characteristic values
             device=self.app.gatt_callback.device # client - or most recent client? unsure if callback handles disconnection
             if device: # send notifications only if client connected
-                self.app.gatt_server.notifyCharacteristicChanged(
-                    device,self.app.characteristic,False)
+                self.app.gatt_server.notifyCharacteristicChanged(device,self.app.characteristic,False)
         except Exception as error:
             self.app.update_message(2,error) # log error
-    
-    def update(self,dt): # update log/status thing for debug
-        self.screen_logs.text=self.app.update() # get from app
 
 RemoteMouseApp().run() # instantiate & run (initialise & build) app

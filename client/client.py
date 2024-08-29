@@ -43,6 +43,7 @@ class Client:
 
     def set_buffer(self,characteristic,data):
         self.buffer=data
+        # print("buffer updated",time())
 
     async def handle_input(self):
         print("handling")
@@ -72,12 +73,14 @@ class Client:
                 self.keyboard.press(Key.media_volume_down) if input&1 else self.keyboard.release(Key.media_volume_down)
             await sleep(0.01)
     
-    # async def stay_awake(self,dummy_characteristic_uuid):
-    #     while True:
-    #         print(f"reading characteristic {dummy_characteristic_uuid} to stay awake...")
-    #         dummy_characteristic_value=await self.bclient.read_gatt_char(dummy_characteristic_uuid)
-    #         print(f"characteristic {dummy_characteristic_uuid} value: {dummy_characteristic_value}")
-    #         await sleep(2)
+    async def stay_awake(self,dummy_characteristic_uuid):
+        while True:
+            print(f"reading characteristic {dummy_characteristic_uuid} to stay awake...")
+            dummy_characteristic_data=await self.bclient.read_gatt_char(dummy_characteristic_uuid)
+            dummy_characteristic_value=unpack("H",dummy_characteristic_data)[0]
+            print(f"characteristic {dummy_characteristic_uuid} value: {dummy_characteristic_value:016b}")
+            await self.bclient.write_gatt_char(dummy_characteristic_uuid,dummy_characteristic_data)
+            await sleep(2)
     
     async def run(self):
         while True:
@@ -90,11 +93,11 @@ class Client:
                     #     value=unpack("H",data)[0]
                     #     print(f"{value:016b}")
                     #     await sleep(30)
-                    await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input())#,self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
+                    await gather(self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))#self.subscribe(remote_mouse_services[0].characteristics),self.handle_input(),self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
             except Exception as error:
                 print()
                 if self.connection_time:
-                    print(f"connected for {time()-self.connection_time}s") # consistently disconnects after 30s
+                    print(f"connected for {time()-self.connection_time}s") # consistently disconnects after 30s when subscribed
                     self.connection_time=None
                 print("error:",error)
             print("starting again")
