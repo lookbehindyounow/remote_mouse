@@ -12,19 +12,28 @@ public class GattCallback extends BluetoothGattServerCallback{
     public IJavaMessenger javaMessenger;
     private BluetoothGattServer gattServer; // need the server to respond to read requests
     public GattCallback(IJavaMessenger javaMessenger){
-        System.out.println("HERE3 GattCallback constructor running");
         this.javaMessenger=javaMessenger;
     }
     
     @Override // does this also run on disconnect or is there another method to extend?
     public void onConnectionStateChange(BluetoothDevice device, int status, int newState){
-        this.javaMessenger.callInPython("device: "+device+", status: "+status+", new state: "+newState);
+        String message=" device address: "+device;
+        if (status!=0){
+            switch (newState){
+                case 0: message="disconnected from"+message;
+                case 1: message="connecting to"+message;
+                case 2: message="connected to"+message;
+                case 3: message="disconnecting from"+message;
+            }
+        }
+        this.javaMessenger.callInPython(message);
         this.device=device;
     }
 
     public void setServer(BluetoothGattServer gattServer){ // this method used in the python
         this.gattServer=gattServer;
     }
+
     @Override // unsure if necessary for notifications, wouldn't need server here either if it's not
     public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic){
         this.gattServer.sendResponse(device, requestId, 0, offset, characteristic.getValue());

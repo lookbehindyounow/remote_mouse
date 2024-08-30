@@ -54,13 +54,13 @@ def uuid(id): # bluetooth SIG standard format for UUIDs: 0000xxxx-0000-1000-8000
 
 class JavaMessenger(PythonJavaClass):
     __javainterfaces__=["com/remotemouse/IJavaMessenger"]
-    # def __init__(self,app):
-    #     self.app=app
+    __javacontext__="app"
+    def __init__(self,app):
+        self.app=app
 
     @java_method("(Ljava/lang/String;)V")
     def callInPython(self,message):
-        # self.app.update_message(1,message)
-        print(message)
+        self.app.update_message(1,message)
 
 class RemoteMouseApp(App): # app
     def __init__(self,**kwargs):
@@ -105,11 +105,10 @@ class RemoteMouseApp(App): # app
         try:
             self.ui.screen_logs.text=self.message
         except AttributeError:
-            print("HERE3 log no log")
+            pass
 
     def setup(self):
-        # try:
-        if True:
+        try:
             # may not need to request permissions at runtime but this is where it happens
             request_permissions([Permission.BLUETOOTH,Permission.BLUETOOTH_ADMIN,Permission.ACCESS_FINE_LOCATION])
 
@@ -130,10 +129,7 @@ class RemoteMouseApp(App): # app
             bluetooth_manager=app_context.getSystemService(Context.BLUETOOTH_SERVICE) # getting android's bluetooth manager
             self.update_message(1,"got bluetooth manager")
 
-            self.java_messenger=JavaMessenger()
-            self.java_messenger.callInPython("HERE3 JavaMessenger working in python")
-            # self.java_messenger=autoclass("com.remotemouse.JavaMessenger")()
-            # self.java_messenger.callInPython("HERE3 dummy JavaMessenger defined in java working in python as autoclass")
+            self.java_messenger=JavaMessenger(self)
             self.gatt_callback=GattCallback(self.java_messenger) # callback object for gatt server
             self.gatt_server=bluetooth_manager.openGattServer(app_context,self.gatt_callback) # create gatt server
             self.gatt_callback.setServer(self.gatt_server) # the callback needs the server to respond to read requests
@@ -144,8 +140,8 @@ class RemoteMouseApp(App): # app
 
             self.advertise() # make discoverable
 
-        # except Exception as error:
-        #     self.update_message(2,error) # log error
+        except Exception as error:
+            self.update_message(2,error) # log error
     
     def advertise(self): # make discoverable
         try:
@@ -168,12 +164,13 @@ class RemoteMouseApp(App): # app
 
             self.ad_callback=AdCallback(self.java_messenger) # callback object for advertiser - remember to check logs from this object when debugging
             bluetooth_advertiser.startAdvertising(settings,data,self.ad_callback)
-            self.update_message(1,"started advertising")
+            self.update_message(1,"starting advertiser...")
 
         except Exception as error:
             self.update_message(2,error) # log error
 
     def build(self):
+        print("HERE3 assigning self.ui")
         self.ui=MainWidget(self)
         return self.ui # give kivy the ui
 
@@ -194,6 +191,7 @@ class MainWidget(BoxLayout): # UI
 
         self.screen_logs=Label(valign="center") # to display log/status thing for debug
         self.mouse_pad.add_widget(self.screen_logs)
+        self.app.update_message(0,f"{self.input_buffer:016b}")
         self.app.update_message(1,"screen logs running")
         Clock.schedule_once(lambda event: self.on_size(None,None)) # initial set label pos
 

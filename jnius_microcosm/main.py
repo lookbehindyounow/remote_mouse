@@ -3,9 +3,18 @@ from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.label import Label
 
-class Print(PythonJavaClass):
-    __javainterfaces__=["com/example/IPrint"]
+class Spy(str):
+    pass
+    def replace(self,*args):
+        print("HERE0")
+        return super().replace(*args)
+    def encode(self,*args):
+        print("HERE1")
+        return super().encode(*args)
 
+class Print(PythonJavaClass):
+    __javainterfaces__=[Spy("com/example/IPrint")]
+    __javacontext__="app"
     @java_method("(Ljava/lang/String;)V")
     def jprint(self,message):
         print(message)
@@ -30,3 +39,4 @@ class MainWidget(Widget):
         self.add_widget(Label(text="kivy working"))
 
 Test().run()
+# printer=Print()
