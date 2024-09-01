@@ -1,25 +1,7 @@
 // IMPORTANT RULE WITH NO EXAMPLE IN CODE: it's "self" in objc & "this" in c++
 #import <Foundation/Foundation.h> // this has all the NS stuff, it's also "import" for objc libraries vs "include" for c++
 #import <CoreBluetooth/CoreBluetooth.h> // macbook bluetooth api
-
-// #include <mach/mach.h>
-// // this block can be moved wherever, it logs how much memory is currently being used by the program
-// mach_task_basic_info_data_t info;
-// mach_msg_type_number_t count=MACH_TASK_BASIC_INFO_COUNT;
-// kern_return_t kr=task_info(mach_task_self(),MACH_TASK_BASIC_INFO,(task_info_t)&info,&count); // get memory being used in bytes
-// if (kr==KERN_SUCCESS){
-//     char mem[18];
-//     snprintf(mem,18,"%f",(double)info.resident_size/1024); // convert to KB, convert to string (char[])
-//     for (int i=strlen(mem)-1;i>0;i--){ // loop backwards through characters
-//         if (mem[i]=='0') {continue;} // skip zeros
-//         if (mem[i]=='.') {i--;} // if first non-zero is decimal point, skip that too
-//         mem[i+1]='\0'; // cut off end of string just after this character
-//         break; // breaks loop on first character that isnt a zero
-//     }
-//     NSLog(@"Current memory used: %sKB",mem); // log as dynamic float/int representations
-// } else {
-//     NSLog(@"Failed to get task info: %d",kr);
-// }
+// #include <mach/mach.h> // for logging how much memory is being used
 
 // class BLEScanner; // declaring c++ class BLEScanner so it can be referenced in BLEDelegate, commented cause it's not currently being referenced in BLEDelegate
 
@@ -31,17 +13,17 @@
 // assign: like a weak reference but also for primitive types?
 @property(nonatomic,strong) CBPeripheral* connectedPeripheral; // delagate needs to hold onto peripheral after discovering so it isn't released before it can connect
 // @property(nonatomic,weak) BLEScanner* scanner; // for delegate object to contain a reference to the scanner, commented cause it's not necessary yet but may be useful later
-// @property(nonatomic,assign) long timesConnected;
+// @property(nonatomic,assign) long timesConnected; // to compare with memory being used to check for memory leaks
 @property(nonatomic,assign) time_t connectionTime;
 @end
 
 @implementation BLEDelegate // objc class defenition/implementation
 -(void)centralManagerDidUpdateState:(CBCentralManager*)central{ // "-" means instance level ("+" would be class level), argument "central" is a "CBCentralManager" pointer
     if (central.state==CBManagerStatePoweredOn){
-        NSLog(@"Bluetooth is on. Starting scan...");
-        // self.timesConnected=0; // for checking for memory leaks
+        // self.timesConnected=0;
         // methods in objc are referenced with their parameters inside the method name
         [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // objc method call: [object namePart1:arg1 namePart2:arg2];
+        NSLog(@"Scanning...");
         // [CBUUID UUIDWithString:@"4500"] is target service UUID, should make this more dynamic at some point
     } else{
         NSLog(@"Bluetooth is not available.");
@@ -50,20 +32,20 @@
 
 // objc method definition: +/-(return type)namePart1:(arg1Type)arg1... namePartN:(argNType)argN {implementation}, argTypes are pointers, primitives or structs
 -(void)centralManager:(CBCentralManager*)central didDiscoverPeripheral:(CBPeripheral*)peripheral advertisementData:(NSDictionary<NSString*,id>*)advertisementData RSSI:(NSNumber*)RSSI{
-    NSLog(@"Discovered device: %@, RSSI: %@",peripheral.name,RSSI);
+    // NSLog(@"Discovered device: %@, RSSI: %@",peripheral.name,RSSI);
     if ([peripheral.name isEqualToString:@"remote_mouse"]){
         [central stopScan];
         self.connectedPeripheral=peripheral; // for reference counting, if this peripheral isn't held onto it's deallocated after this method returns
         peripheral.delegate=self; // BLEDelegate inherits from CBCentralManagerDelegate & CBPeripheralDelegate protocols so can be used for both
         [central connectPeripheral:peripheral options:nil];
-        NSLog(@"Connecting to %@",peripheral.name);
+        NSLog(@"Connecting to %@...",peripheral.name);
     }
 }
 
 -(void)centralManager:(CBCentralManager*)central didConnectPeripheral:(CBPeripheral*)peripheral{
     self.connectionTime=time(0);
-    NSLog(@"Successfully connected to %@ server",peripheral.name);
-    // start of memory usage log
+    NSLog(@"Connected to %@ server",peripheral.name);
+    //// this block can be moved wherever, it logs how much memory is currently being used by the program
     // mach_task_basic_info_data_t info;
     // mach_msg_type_number_t count=MACH_TASK_BASIC_INFO_COUNT;
     // kern_return_t kr=task_info(mach_task_self(),MACH_TASK_BASIC_INFO,(task_info_t)&info,&count); // get memory being used in bytes
@@ -80,10 +62,33 @@
     // } else {
     //     NSLog(@"Failed to get task info: %d",kr);
     // }
+    //
     // self.timesConnected++;
     // NSLog(@"times connected: %ld",self.timesConnected); // log times connected to compare with current used memory size
-    // end of memory usage log
+    // [central cancelPeripheralConnection:peripheral]; // disconect upon connection for testing
+    //// end of memory usage log
     [peripheral discoverServices:nil];
+}
+
+-(void)centralManager:(CBCentralManager*)central didFailToConnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
+    NSLog(@"Failed to connect to %@ server",peripheral.name);
+    NSLog(@"Error: %@",error.localizedDescription);
+    NSLog(@"Was connecting for %lds",(long)(time(0)-self.connectionTime));
+    self.connectedPeripheral=nil;
+    NSLog(@"\n");
+    NSLog(@"Scanning...");
+    [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // restart scan
+}
+
+-(void)centralManager:(CBCentralManager*)central didDisconnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
+    NSLog(@"\n");
+    NSLog(@"Disconnected from %@ server",peripheral.name);
+    error?NSLog(@"Error: %@",error.localizedDescription):
+    NSLog(@"Connected for %lds",(long)(time(0)-self.connectionTime));
+    self.connectedPeripheral=nil;
+    NSLog(@"\n");
+    NSLog(@"Scanning...");
+    [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // restart scan
 }
 
 -(void)peripheral:(CBPeripheral*)peripheral didDiscoverServices:(NSError*)error{ // services are in peripheral.services after running discoverServices
@@ -105,7 +110,7 @@
     }
     NSLog(@"  Characteristics:");
     for (CBCharacteristic* characteristic in service.characteristics){
-        NSLog(@"    Characteristic UUID: %@",characteristic.UUID);
+        NSLog(@"    Characteristic UUID: %@; subscribing",characteristic.UUID);
         // [peripheral readValueForCharacteristic:characteristic];
         [peripheral setNotifyValue:true forCharacteristic:characteristic];
     }
@@ -125,23 +130,7 @@
     char x[6];char y[6];char buttons[7];
     strncpy(x,bits,5);strncpy(y,bits+5,5);strncpy(buttons,bits+10,6); // split bits up into sections for x, y & buttons
     x[5]='\0';y[5]='\0';buttons[6]='\0';
-    NSLog(@"Characteristic data: %s %s %s",x,y,buttons); // display bits with spaces between sections
-}
-
--(void)centralManager:(CBCentralManager*)central didFailToConnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
-    NSLog(@"Failed to connect to %@, error: %@",peripheral.name,error.localizedDescription);
-    NSLog(@"Was connecting for %lds",(long)(time(0)-self.connectionTime));
-    // self.connectedPeripheral=nil;
-    // [peripheral release];
-    [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // restart scan
-}
-
--(void)centralManager:(CBCentralManager*)central didDisconnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
-    NSLog(@"Disconnected from %@, error: %@",peripheral.name,error.localizedDescription);
-    NSLog(@"Connected for %lds",(long)(time(0)-self.connectionTime));
-    // self.connectedPeripheral=nil; // thought I would need these but was getting segmentation faults with either? test again
-    // [peripheral release];
-    [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // restart scan
+    NSLog(@"%s %s %s",x,y,buttons); // display bits with spaces between sections
 }
 @end
 

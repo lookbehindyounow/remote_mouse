@@ -1,70 +1,77 @@
 from bleak import BleakScanner, BleakClient # for BLE scanning/client
-from asyncio import run as async_run, create_task, gather, Lock, sleep # a lot of BLE stuff is asynchronous
+from asyncio import run as async_run, create_task, gather, sleep # a lot of BLE stuff is asynchronous
+from struct import unpack # to turn byte arrays into other types
 from pynput.mouse import Controller as Mouse, Button # to control laptop
 from pynput.keyboard import Controller as Keyboard, Key
-from struct import unpack # to turn byte arrays into other types
-from time import time
+from time import time # for timing connection duration & update frequency
 
 class Client:
     def __init__(self):
         self.buffer=None
-        self.mouse_down=False
-        self.mouse=Mouse()
-        self.keyboard=Keyboard()
         self.connection_time=None
+        self.prev_update=None
+        self.mouse=Mouse()
+        self.mouse.down=False
+        self.keyboard=Keyboard()
 
-    async def scan(self,target): # scan for devices
+    async def scan(self,target):
         print("Scanning...")
-        devices=await BleakScanner.discover() # scan, this part takes a while
+        devices=await BleakScanner.discover() # point of scan, this part takes a while
         for device in devices:
             if device.name==target:
                 return device
-        print(f"can't find {target} server")
+        print(f"Can't find {target} server")
         return None
 
-    async def connect(self,server): # connect to remote-mouse gatt server
-        self.bclient=BleakClient(server.address) # create client
-        await self.bclient.connect() # connect to server, this part takes a while
+    async def connect(self,server):
+        self.bclient=BleakClient(server.address)
+        print(f"Connecting to {server.name} server...")
+        await self.bclient.connect() # point of connection, also takes a while
         # await self.bclient.disconnect() to disconnect
         if self.bclient.is_connected:
             self.connection_time=time()
-            print(f"connected to {server.name} server\nServices:")
+            print(f"Connected to {server.name} server\nServices:")
             services=list(self.bclient.services)
-            [print(f"  service UUID: {service.uuid}\n  Characteristics:") for service in services]
-            [[print(f"    characteristic UUID: {characteristic.uuid}") for characteristic in service.characteristics] for service in services]
+            for service in services:
+                print(f"  Service UUID: {service.uuid}\n  Characteristics:")
+                for characteristic in service.characteristics:
+                    print(f"    Characteristic UUID: {characteristic.uuid}")
             return services
-        print(f"failed to connect to {server.name} server")
+        print(f"Failed to connect to {server.name} server")
         return None
 
     async def subscribe(self,characteristics):
         print()
-        [print(f"subscribing to characteristic with UUID: {characteristic.uuid}") for characteristic in characteristics]
-        await gather(*[self.bclient.start_notify(characteristic,self.set_buffer) for characteristic in characteristics]) # runs until stopped
+        [print(f"Subscribing to characteristic with UUID: {characteristic.uuid}") for characteristic in characteristics]
+        await gather(*[self.bclient.start_notify(characteristic,self.set_buffer) for characteristic in characteristics])
+        # runs until disconnected or bclient.stop_notify(characteristic.uuid)
 
     def set_buffer(self,characteristic,data):
         self.buffer=data
-        # print("buffer updated",time())
+        # update_time=time()
+        # if self.prev_update: print(f"buffer updated after {update_time-self.prev_update}s")
+        # self.prev_update=update_time
 
     async def handle_input(self):
-        print("handling")
+        print("Handling input...")
         while True:
             if self.buffer:
                 data=self.buffer
                 self.buffer=None # clear buffer first thing to avoid clearing new unhandled input
                 input=unpack("H",data)[0] # 16 bits to int
-                # print(f"{input:016b}")
+                print(f"{input:016b}")
                 #  ┌-------|dx|------┐* 1|-1 depending on sign bit
                 dx=((input&30720)>>11)*[1,-1][(input&32768)>>15]
                 dy=((input&960)>>6)*[1,-1][(input&1024)>>10]
                 self.mouse.move(dx,dy)
                 # if left mouse bit is 1 & mouse isn't already down, press
-                if input&32 and not self.mouse_down:
+                if input&32 and not self.mouse.down:
                     self.mouse.press(Button.left)
-                    self.mouse_down=True
+                    self.mouse.down=True
                 # if left mouse bit is 0 & mouse is currently down, release
-                elif not input&32 and self.mouse_down:
+                elif not input&32 and self.mouse.down:
                     self.mouse.release(Button.left)
-                    self.mouse_down=False
+                    self.mouse.down=False
                 # other button bits can just be set every frame cause the functionality of holding them is not as important
                 self.mouse.press(Button.right) if input&16 else self.mouse.release(Button.right)
                 self.keyboard.press(Key.left) if input&8 else self.keyboard.release(Key.left)
@@ -88,20 +95,20 @@ class Client:
                 remote_mouse_server=await self.scan("remote_mouse")
                 if remote_mouse_server:
                     remote_mouse_services=await self.connect(remote_mouse_server)
-                    # while True: # testing if connection remains stable while not subscribed 
-                    #     data=await self.bclient.read_gatt_char(remote_mouse_services[0].characteristics[0].uuid)
-                    #     value=unpack("H",data)[0]
-                    #     print(f"{value:016b}")
-                    #     await sleep(30)
-                    await gather(self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))#self.subscribe(remote_mouse_services[0].characteristics),self.handle_input(),self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
+                    # await self.bclient.disconnect() # remove
+                    # await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input())
+                    # await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input(),self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
+                    # await self.stay_awake(remote_mouse_services[0].characteristics[0].uuid)
             except Exception as error:
                 print()
                 if self.connection_time:
-                    print(f"connected for {time()-self.connection_time}s") # consistently disconnects after 30s when subscribed
+                    print(f"Connected for {time()-self.connection_time}s") # consistently disconnects after 30s when subscribed
                     self.connection_time=None
-                print("error:",error)
-            print("starting again")
-            print("=====================================")
-            print()
+                if isinstance(error,TimeoutError):
+                    print("Timed out")
+                else:
+                    print("Error:",error)
+            print("Starting again")
+            print("=====================================\n")
 
 async_run(Client().run())

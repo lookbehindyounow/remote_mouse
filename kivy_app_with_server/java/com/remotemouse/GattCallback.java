@@ -2,39 +2,49 @@ package com.remotemouse;
 
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGattServer; // this can go if we don't need read requests
-import android.bluetooth.BluetoothGattService; // probably don't need
-import android.bluetooth.BluetoothGattCharacteristic; // this can go if we don't need read requests
-import com.remotemouse.IJavaMessenger; // may ot need this cause it's same package
+import android.bluetooth.BluetoothGattServer; // not required for client to receive notifcations
+import android.bluetooth.BluetoothGattCharacteristic; // not required for client to receive notifcations
 
 public class GattCallback extends BluetoothGattServerCallback{
     public BluetoothDevice device; // need the connected device to send notifications to; accessed in the python
-    public IJavaMessenger javaMessenger;
-    private BluetoothGattServer gattServer; // need the server to respond to read requests
+    public IJavaMessenger javaMessenger; // interface declared in java implemented in python to trigger python events from onConnectionStateChange
+    private BluetoothGattServer gattServer; // not required for client to receive notifcations
     public GattCallback(IJavaMessenger javaMessenger){
         this.javaMessenger=javaMessenger;
+        this.device=null;
     }
     
-    @Override // does this also run on disconnect or is there another method to extend?
+    @Override
     public void onConnectionStateChange(BluetoothDevice device, int status, int newState){
-        String message=" device address: "+device;
+        String message="";
         if (status!=0){
-            switch (newState){
-                case 0: message="disconnected from"+message;
-                case 1: message="connecting to"+message;
-                case 2: message="connected to"+message;
-                case 3: message="disconnecting from"+message;
-            }
+            message+="Unexpected status code "+status+"; ";
         }
+        switch (newState){
+            case 0:
+                message+="Disconnected from";
+                this.device=null;
+                break;
+            case 1:
+                message+="Connecting to";
+                break;
+            case 2:
+                message+="Connected to";
+                this.device=device;
+                break;
+            case 3:
+                message+="Disconnecting from";
+                break;
+        }
+        message+=" device with address: "+device;
         this.javaMessenger.callInPython(message);
-        this.device=device;
     }
 
-    public void setServer(BluetoothGattServer gattServer){ // this method used in the python
-        this.gattServer=gattServer;
+    public void setServer(BluetoothGattServer gattServer){ // this method used in the python as server doesn't exist at time of initialisation
+        this.gattServer=gattServer; // not required for client to receive notifcations
     }
 
-    @Override // unsure if necessary for notifications, wouldn't need server here either if it's not
+    @Override // onCharacteristicReadRequest not required for client to receive notifcations
     public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic){
         this.gattServer.sendResponse(device, requestId, 0, offset, characteristic.getValue());
     }
