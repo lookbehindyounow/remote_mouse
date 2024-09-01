@@ -95,9 +95,8 @@ class Client:
                 remote_mouse_server=await self.scan("remote_mouse")
                 if remote_mouse_server:
                     remote_mouse_services=await self.connect(remote_mouse_server)
-                    # await self.bclient.disconnect() # remove
+                    await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input(),self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
                     # await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input())
-                    # await gather(self.subscribe(remote_mouse_services[0].characteristics),self.handle_input(),self.stay_awake(remote_mouse_services[0].characteristics[0].uuid))
                     # await self.stay_awake(remote_mouse_services[0].characteristics[0].uuid)
             except Exception as error:
                 print()
