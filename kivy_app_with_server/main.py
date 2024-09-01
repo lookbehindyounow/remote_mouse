@@ -15,35 +15,27 @@ from kivy.clock import Clock
 
 # need java classes to do android stuff
 try: # but these would all throw errors when testing UI on the laptop so I've put them in a try block
-    # from android.permissions import request_permissions, Permission # this is not a real python library
-    # it's handled at compile-time & is only here to ask runtime permissions, NOT NEEDED - REMOVE
-
     # java context stuff
     Context=autoclass('android.content.Context')
     PythonActivity=autoclass('org.kivy.android.PythonActivity')
 
     # bluetooth
     BluetoothAdapter=autoclass('android.bluetooth.BluetoothAdapter')
-    # BluetoothManager=autoclass('android.bluetooth.BluetoothManager') # not necessary, never explicitly used but is used - REMOVE
     BluetoothDevice=autoclass('android.bluetooth.BluetoothDevice')
 
     # gatt server
     GattService=autoclass('android.bluetooth.BluetoothGattService')
     GattCharacteristic=autoclass('android.bluetooth.BluetoothGattCharacteristic')
     GattDescriptor=autoclass('android.bluetooth.BluetoothGattDescriptor')
-    # BluetoothGattServer=autoclass('android.bluetooth.BluetoothGattServer') # not necessary, never explicitly used but is used - REMOVE
     GattCallback=autoclass('com.remotemouse.GattCallback') # custom gatt server callback class
-    # BluetoothGattServerCallback=autoclass('android.bluetooth.BluetoothGattServerCallback') # not necessary, is extended by GattCallback - REMOVE
 
     # advertising
-    # BluetoothLeAdvertiser=autoclass('android.bluetooth.le.BluetoothLeAdvertiser') # not necessary, never explicitly used but is used - REMOVE
     AdvertiseSettings=autoclass('android.bluetooth.le.AdvertiseSettings')
     AdvertiseSettingsBuilder=autoclass('android.bluetooth.le.AdvertiseSettings$Builder')
     AdvertiseData=autoclass('android.bluetooth.le.AdvertiseData')
     AdvertiseDataBuilder=autoclass('android.bluetooth.le.AdvertiseData$Builder')
     ParcelUUID=autoclass("android.os.ParcelUuid") # UUIDs need to be parcel UUIDs for advertising
     AdCallback=autoclass('com.remotemouse.AdCallback') # custom advertise server callback class
-    # AdvertiseCallback=autoclass('android.bluetooth.le.AdvertiseCallback') # not necessary, is extended by AdCallback - REMOVE
 except:
     pass
 
@@ -91,10 +83,8 @@ class RemoteMouseApp(App): # app
             self.characteristic.setValue(pack("H",0)) # initial value, pack into bye array
             self.update_message(1,"set characteristic initial value")
 
-            # Client Characteristic Configuration Descriptor
-            descriptor=GattDescriptor(uuid(2902),GattDescriptor.PERMISSION_WRITE)#|GattDescriptor.PERMISSION_READ) # doesn't need PERMISSION_READ - REMOVE
+            descriptor=GattDescriptor(uuid(2902),GattDescriptor.PERMISSION_WRITE) # Client Characteristic Configuration Descriptor
             # the client writes to this^ descriptor to request notifications & it has to have that specific UUID
-            # descriptor.setValue(GattDescriptor.ENABLE_NOTIFICATION_VALUE) # not necessary with CCCD - REMOVE
             self.update_message(1,"made CCCD")
             self.characteristic.addDescriptor(descriptor) # add descriptor to characteristic
             self.update_message(1,"added CCCD to characteristic")
@@ -109,9 +99,6 @@ class RemoteMouseApp(App): # app
 
     def setup(self):
         try:
-            # no need to request permissions at runtime but this is where it happens - REMOVE
-            # request_permissions([Permission.BLUETOOTH,Permission.BLUETOOTH_ADMIN,Permission.ACCESS_FINE_LOCATION])
-
             self.adapter=BluetoothAdapter.getDefaultAdapter() # getting android's bluetooth adapter
             self.update_message(1,"got bluetooth adapter")
 
@@ -189,9 +176,8 @@ class MainWidget(BoxLayout): # UI
 
         self.screen_logs=Label(valign="center") # to display log/status thing for debug
         self.mouse_pad.add_widget(self.screen_logs)
-        self.app.update_message(0,f"{self.input_buffer:016b}") # initial set label text
-        self.app.update_message(1,"screen logs running")
-        # Clock.schedule_once(lambda event: self.on_size(None,None)) # initial set label pos, non-working attempt to get screen logs to display on startup - REMOVE
+        Clock.schedule_once(lambda dt: self.app.update_message(1,"screen logs running")) # put text in screen_logs
+        # scheduled because app doesn't have ui attribute yet, so update_message won't be able to change screen_logs.text until next frame
 
         self.button_container=GridLayout()
         self.buttons=["left mouse","right mouse","left arrow","right arrow","volume up","volume down"] # button text
@@ -214,7 +200,7 @@ class MainWidget(BoxLayout): # UI
             self.button_container.rows=3
             [self.button_container.add_widget(self.buttons[i]) for i in range(6)]
         # when you rotate your phone it calls on_size before widget positions have updated
-        Clock.schedule_once(self.place_label) # so moving the log/status thing needs to be scheduled
+        Clock.schedule_once(self.place_label) # so moving the log/status thing needs to be scheduled for next frame
     
     def place_label(self,dt):
         self.screen_logs.pos=self.mouse_pad.to_parent(0,0,True) # display log/status thing in mouse_pad
