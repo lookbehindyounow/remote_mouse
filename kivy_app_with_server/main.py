@@ -1,6 +1,6 @@
 from jnius import autoclass, PythonJavaClass, java_method # this allows us to work with java classes so we can use android bluetooth api
 from struct import pack # to turn variables into byte arrays
-from math import floor # for button pos calc
+from math import floor, ceil # for button pos calc
 from time import time # for notification frequency logging
 
 # for UI
@@ -168,6 +168,15 @@ class MainWidget(BoxLayout): # UI
         self.padding=dp(20)
         self.spacing=dp(10)
 
+        self.button_container=GridLayout()
+        self.buttons=["left mouse","right mouse","left arrow","right arrow","volume up","volume down"] # button text
+        for i in range(6): # create buttons
+            self.buttons[i]=Button(text=self.buttons[i])
+            self.buttons[i].i=i # for bound methods to know which bit to change when button pressed/released
+            self.buttons[i].bind(on_press=self.press,on_release=self.release)
+            self.button_container.add_widget(self.buttons[i])
+        self.add_widget(self.button_container)
+
         self.mouse_pad=Widget() # to detect touches
         self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
         self.mouse_pad.bind(on_touch_up=self.reset_mouse)
@@ -178,15 +187,6 @@ class MainWidget(BoxLayout): # UI
         self.mouse_pad.add_widget(self.screen_logs)
         Clock.schedule_once(lambda dt: self.app.update_message(1,"screen logs running")) # put text in screen_logs
         # scheduled because app doesn't have ui attribute yet, so update_message won't be able to change screen_logs.text until next frame
-
-        self.button_container=GridLayout()
-        self.buttons=["left mouse","right mouse","left arrow","right arrow","volume up","volume down"] # button text
-        for i in range(6): # create buttons
-            self.buttons[i]=Button(text=self.buttons[i])
-            self.buttons[i].i=i # for bound methods to know which bit to change when button pressed/released
-            self.buttons[i].bind(on_press=self.press,on_release=self.release)
-            self.button_container.add_widget(self.buttons[i])
-        self.add_widget(self.button_container)
 
     def on_size(self,caller,size):
         if self.width>self.height: # landscape
@@ -210,7 +210,6 @@ class MainWidget(BoxLayout): # UI
     def read_mouse(self,caller,touch): # handle mouse pad input
         if self.mouse_pad.collide_point(*touch.pos): # only if touch pos is within mouse pad pos
             x,y=self.mouse_pad.to_local(*touch.pos,True) # get coords relative to mouse pad origin
-            x,y=floor(x),floor(y) # to int (round down to allow for slightly easier micro-movements)
             if self.x0!=None and self.y0!=None: # don't send first touch
                 dx=x-self.x0 # get x & y direction (ints)
                 dy=y-self.y0
@@ -219,8 +218,8 @@ class MainWidget(BoxLayout): # UI
                 if dx<0: self.input_buffer|=32768 # bit 1 is sign bit for dx
                 if dy>0: self.input_buffer|=1024 # bit 6 is sign bit for dy (inverted cause mac screen coords start in top left)
 
-                dx=min(abs(dx),15) # get x & y direction magnitude capped at 15 (to fit into 4 bits each)
-                dy=min(abs(dy),15)
+                dx=min(ceil(abs(dx/4)),15) # get x & y int direction magnitude scaled down, capped at 15 (to fit into 4 bits each)
+                dy=min(ceil(abs(dy/4)),15)
                 self.input_buffer|=(dx<<11)|(dy<<6) # put 4 bit representations of dx & dy into places 2-5 & 7-10 respectively
 
                 self.send()

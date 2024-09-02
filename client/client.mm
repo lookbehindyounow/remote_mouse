@@ -4,6 +4,7 @@
 #import <CoreBluetooth/CoreBluetooth.h> // macbook bluetooth api
 #include <cstring> // for data processing
 #include <ApplicationServices/ApplicationServices.h> // for controlling laptop
+#include <cmath> // for mouse movement processing
 #include <Carbon/Carbon.h> // for kVK_ANSI key codes
 #import <Cocoa/Cocoa.h> // for NSEvent
 #include <ctime> // for measuring time
@@ -125,13 +126,11 @@
     NSLog(@"%s %s %s",x,y,buttons); // display bits with spaces between sections
 
     CGPoint pos=CGEventGetLocation(CGEventCreate(nullptr)); // get mouse pos
-    int8_t dx=(bytes&30720)>>11; // mouse x speed from characteristic
-    dx*=bytes&32768?-1:1; // mouse x direction from characteristic
-    int8_t dy=(bytes&960)>>6; // mouse y speed from characteristic
-    dy*=bytes&1024?-1:1; // mouse y direction from characteristic
+    uint8_t dx=(bytes&30720)>>11; // mouse x speed from characteristic
+    uint8_t dy=(bytes&960)>>6; // mouse y speed from characteristic
     if (dx||dy){ // if mouse moves
-        pos.x+=dx; // update pos with input
-        pos.y+=dy;
+        pos.x+=0.5*dx*dx*(bytes&32768?-1:1); // update pos with input^2 × mouse direction from characteristic
+        pos.y+=0.5*dy*dy*(bytes&1024?-1:1);
         // creates mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
         CGEventRef event=CGEventCreateMouseEvent(nullptr,kCGEventMouseMoved,pos,(CGMouseButton)0);
         CGEventPost(kCGHIDEventTap,event); // post event, moving mouse
@@ -159,7 +158,8 @@
                 mouseButton=isPressed?kCGEventLeftMouseDown:kCGEventLeftMouseUp;
                 break;
             case 1: // right mouse
-                mouseButton=isPressed?kCGEventRightMouseDown:kCGEventRightMouseUp;
+                // mouseButton=isPressed?kCGEventRightMouseDown:kCGEventRightMouseUp;
+                key=kVK_DownArrow;
                 break;
             case 2: // left arrow
                 key=kVK_LeftArrow;
@@ -179,7 +179,7 @@
 
         CGEventRef event;
         if (i<4){ // create event; first 4 buttons
-            event=i<2?CGEventCreateMouseEvent(nullptr,mouseButton,pos,(CGMouseButton)0):CGEventCreateKeyboardEvent(nullptr,key,isPressed);
+            event=i<1?CGEventCreateMouseEvent(nullptr,mouseButton,pos,(CGMouseButton)0):CGEventCreateKeyboardEvent(nullptr,key,isPressed);
             CGEventPost(kCGHIDEventTap,event); // post event
             CFRelease(event); // release event for memory management
         } else{ // create event; volume buttons (not working with CGEventCreateKeyboardEvent)

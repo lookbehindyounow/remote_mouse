@@ -1,6 +1,10 @@
+- right mouse button in app to become shift button; left mouse becomes right mouse, left/right arrows become up/down, volume buttons become whatever else in future
 - fix idle timeout 30s issue - request custom supervision timeout from CoreBluetooth client?
-- make buttons in app to start & stop server, or some kind of loop that runs it as soon as bluetooth is enabled
+- didFailToConnectPeripheral never runs, just sits in limbo after failed connection attempt
 - investigate if anything funky's still going on with the orders of the buttons
+- make 15-speed mouse movement scale exponentially
 - experiment with setting connection priority/latency
 - experiment with bluetooth 5.x if not already using it
+- make buttons in app to start & stop server, or some kind of loop that runs it as soon as bluetooth is enabled
 - make the ui better
+- multi-touch

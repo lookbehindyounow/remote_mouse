@@ -51,7 +51,7 @@ requirements = python3,kivy,kivymd,pyjnius
 
 # (list) Supported orientations
 # Valid options are: landscape, portrait, portrait-reverse or landscape-reverse
-orientation = landscape, portrait, portrait-reverse, landscape-reverse
+orientation = landscape, portrait
 
 # (list) List of service to declare
 #services = NAME:ENTRYPOINT_TO_PY,NAME2:ENTRYPOINT2_TO_PY
