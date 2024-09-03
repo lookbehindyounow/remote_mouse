@@ -1,4 +1,4 @@
-- right mouse button in app to become shift button; left mouse becomes right mouse, left/right arrows become up/down, volume buttons become whatever else in future
+- right mouse button in app to become shift button; left mouse becomes right mouse, left/right/up/down arrows become volume buttons & whatever else in future, mouse pad becomes scroll pad
 - fix idle timeout 30s issue - request custom supervision timeout from CoreBluetooth client?
 - didFailToConnectPeripheral never runs, just sits in limbo after failed connection attempt
 - investigate if anything funky's still going on with the orders of the buttons

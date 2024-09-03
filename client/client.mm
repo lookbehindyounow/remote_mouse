@@ -28,6 +28,7 @@
 
 @implementation BLEDelegate // objc class defenition/implementation
 -(void)centralManagerDidUpdateState:(CBCentralManager*)central{ // "-" means instance level ("+" would be class level), argument "central" is a "CBCentralManager" pointer
+
     if (central.state==CBManagerStatePoweredOn){
         // self.timesConnected=0;
         // methods in objc are referenced with their parameters inside the method name
@@ -116,24 +117,31 @@
     short bytes; // put raw bytes from characteristic.value's property "bytes" into a short (cause it's 2 bytes)
     memcpy(&bytes,[characteristic.value bytes],2);
 
-    char bits[16];
-    for (short i=0;i<16;i++){
-        bits[i]=bytes&(32768>>i)?'1':'0'; // for each bit in "bytes", add a 1 or 0 to binary string "bits"
-    }
-    char x[6];char y[6];char buttons[7];
-    strncpy(x,bits,5);strncpy(y,bits+5,5);strncpy(buttons,bits+10,6); // split bits up into sections for x, y & buttons
-    x[5]='\0';y[5]='\0';buttons[6]='\0'; // add null terminators
-    NSLog(@"%s %s %s",x,y,buttons); // display bits with spaces between sections
+    // char bits[16];
+    // for (short i=0;i<16;i++){
+    //     bits[i]=bytes&(32768>>i)?'1':'0'; // for each bit in "bytes", add a 1 or 0 to binary string "bits"
+    // }
+    // char x[6];char y[6];char buttons[7];
+    // strncpy(x,bits,5);strncpy(y,bits+5,5);strncpy(buttons,bits+10,6); // split bits up into sections for x, y & buttons
+    // x[5]='\0';y[5]='\0';buttons[6]='\0'; // add null terminators
+    // NSLog(@"%s %s %s",x,y,buttons); // display bits with spaces between sections
 
+    CGEventRef event; // declare event
     CGPoint pos=CGEventGetLocation(CGEventCreate(nullptr)); // get mouse pos
-    uint8_t dx=(bytes&30720)>>11; // mouse x speed from characteristic
-    uint8_t dy=(bytes&960)>>6; // mouse y speed from characteristic
+    int8_t dx=(bytes&30720)>>11; // mouse x speed from characteristic
+    int8_t dy=(bytes&960)>>6; // mouse y speed from characteristic
     if (dx||dy){ // if mouse moves
-        pos.x+=0.5*dx*dx*(bytes&32768?-1:1); // update pos with input^2 × mouse direction from characteristic
-        pos.y+=0.5*dy*dy*(bytes&1024?-1:1);
-        // creates mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
-        CGEventRef event=CGEventCreateMouseEvent(nullptr,kCGEventMouseMoved,pos,(CGMouseButton)0);
-        CGEventPost(kCGHIDEventTap,event); // post event, moving mouse
+        dx*=(dx+1)/2; // input scaling
+        dy*=(dy+1)/2;
+        if (!(bytes&16)){ // shift not pressed
+            pos.x+=dx*(bytes&32768?-1:1);
+            pos.y+=dy*(bytes&1024?-1:1);
+            // creates mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
+            event=CGEventCreateMouseEvent(nullptr,kCGEventMouseMoved,pos,(CGMouseButton)0);
+        } else{ // shift pressed
+            event=CGEventCreateScrollWheelEvent(nullptr,kCGScrollEventUnitPixel,1,bytes&1024?-dy:dy);
+        }
+        CGEventPost(kCGHIDEventTap,event);
         CFRelease(event); // release event for memory management
     }
 
@@ -141,55 +149,67 @@
         bool isPressed;
         if (bytes&(32>>i) && !(self.buttonStates&(32>>i))){ // if app button pressed & button state 0
             self.buttonStates|=(32>>i); // change button state to 1
-            isPressed=true; // press button
+            isPressed=true;
         } else if (!(bytes&(32>>i)) && self.buttonStates&(32>>i)){ // if app button not pressed & button state 1
             self.buttonStates&=255-(32>>i); // change button state to 0
-            isPressed=false; // release button
-        } else{ // if no change in button state, continue to next iteration to skip event creation & posting
+            isPressed=false;
+        } else{ // if no change in button state, skip event creation & posting, continue to next button
             continue;
         }
 
         CGEventType mouseButton;
         CGKeyCode key;
-        short intPressed;
         int data;
         switch (i){ // choose event params by button index
-            case 0: // left mouse
-                mouseButton=isPressed?kCGEventLeftMouseDown:kCGEventLeftMouseUp;
+            case 0: // mouse button
+                !(self.buttonStates&16)? // not (shift pressed)?
+                mouseButton=isPressed?kCGEventLeftMouseDown:kCGEventLeftMouseUp: // left mouse
+                mouseButton=isPressed?kCGEventRightMouseDown:kCGEventRightMouseUp; // right mouse
                 break;
-            case 1: // right mouse
-                // mouseButton=isPressed?kCGEventRightMouseDown:kCGEventRightMouseUp;
-                key=kVK_DownArrow;
+            case 1: // shift button
+                continue; // all it does is update buttonStates&16 which has already happened so skip
+            case 2: // up arrow / unassigned button
+                // !(self.buttonStates&16)?
+                if (!(self.buttonStates&16)){
+                    key=kVK_UpArrow;
+                } else{
+                    continue; // unassigned, skip
+                }
                 break;
-            case 2: // left arrow
-                key=kVK_LeftArrow;
-                break;
-            case 3: // right arrow
-                key=kVK_RightArrow;
-                break;
-            case 4:
-                intPressed=isPressed?0xa00:0xb00;
+            case 3: // right arrow / volume up button
+                !(self.buttonStates&16)?
+                key=kVK_RightArrow:
                 data=0;
                 break;
-            case 5:
-                intPressed=isPressed?0xa00:0xb00;
+            case 4: // left arrow / unassigned button
+                // !(self.buttonStates&16)?
+                if (!(self.buttonStates&16)){
+                    key=kVK_LeftArrow;
+                } else{
+                    continue; // unassigned, skip
+                }
+                break;
+            case 5: // down arrow / volume down button
+                !(self.buttonStates&16)?
+                key=kVK_DownArrow:
                 data=65536;
                 break;
         }
 
-        CGEventRef event;
-        if (i<4){ // create event; first 4 buttons
-            event=i<1?CGEventCreateMouseEvent(nullptr,mouseButton,pos,(CGMouseButton)0):CGEventCreateKeyboardEvent(nullptr,key,isPressed);
-            CGEventPost(kCGHIDEventTap,event); // post event
-            CFRelease(event); // release event for memory management
-        } else{ // create event; volume buttons (not working with CGEventCreateKeyboardEvent)
+        if (self.buttonStates&16&&(i==3||i==5)){ // if volume button
+            short intPressed;
+            intPressed=isPressed?0xa00:0xb00;
             NSEvent* cocoaEvent=[NSEvent otherEventWithType:NSEventTypeSystemDefined location:NSZeroPoint // create NSEvent
                 modifierFlags:intPressed // variable input
                 timestamp:0 windowNumber:0 context:nil subtype:8 // don't know what these do
                 data1:data|intPressed // variable input
                 data2:-1]; // don't know what these do
-            CGEventPost(kCGHIDEventTap,[cocoaEvent CGEvent]); // post CGEvent from NSEvent
-            // CFRelease(event); // releasing this event crashes program & says illegal hardware instruction
+            event=[cocoaEvent CGEvent]; // get CGEvent from NSEvent
+            CGEventPost(kCGHIDEventTap,event); // post event, we can't release it cause it's owned by cocoaEvent but this is released with ARC anyway
+        } else{
+            event=i?CGEventCreateKeyboardEvent(nullptr,key,isPressed):CGEventCreateMouseEvent(nullptr,mouseButton,pos,(CGMouseButton)0);
+            CGEventPost(kCGHIDEventTap,event); // post event
+            CFRelease(event); // release event for memory management
         }
     }
 

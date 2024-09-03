@@ -169,9 +169,12 @@ class MainWidget(BoxLayout): # UI
         self.spacing=dp(10)
 
         self.button_container=GridLayout()
-        self.buttons=["left mouse","right mouse","left arrow","right arrow","volume up","volume down"] # button text
+        self.buttons=[None]*6
+        self.isShifted=False
+        self.button_names=[["left mouse","shift","up arrow","right arrow","left arrow","down arrow"], # button text
+                            ["right mouse","o","<unassigned>","volume up","<unassigned>","volume down"]] # shifted button text
         for i in range(6): # create buttons
-            self.buttons[i]=Button(text=self.buttons[i])
+            self.buttons[i]=Button(text=self.button_names[0][i])
             self.buttons[i].i=i # for bound methods to know which bit to change when button pressed/released
             self.buttons[i].bind(on_press=self.press,on_release=self.release)
             self.button_container.add_widget(self.buttons[i])
@@ -193,7 +196,7 @@ class MainWidget(BoxLayout): # UI
             self.orientation="horizontal"
             self.button_container.clear_widgets()
             self.button_container.rows=2
-            [self.button_container.add_widget(self.buttons[i]) for i in [0,1,4,2,3,5]]# order of buttons is different for landscape
+            [self.button_container.add_widget(self.buttons[i]) for i in [2,3,0,4,5,1]]# order of buttons is different for landscape
         else: # portrait
             self.orientation="vertical"
             self.button_container.clear_widgets()
@@ -230,10 +233,16 @@ class MainWidget(BoxLayout): # UI
         self.input_buffer&=63 # wipe pos data (first 10 bits) to 0s
     
     def press(self,caller): # handle button press
+        if caller.i==1: # shift button
+            for button,name in zip(self.buttons,self.button_names[1]):
+                button.text=name
         self.input_buffer|=(32>>caller.i) # set relevant button bit (positions 11-16) to 1
         self.send()
     
     def release(self,caller): # handle button press
+        if caller.i==1: # shift button
+            for button,name in zip(self.buttons,self.button_names[0]):
+                button.text=name
         self.input_buffer&=65535-(32>>caller.i) # set relevant button bit (positions 11-16) to 0
         self.send()
     
