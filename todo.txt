@@ -1,5 +1,5 @@
 - fix idle timeout 30s issue - request custom supervision timeout from CoreBluetooth client?
-- didFailToConnectPeripheral never runs, just sits in limbo after failed connection attempt
+- didFailToConnectPeripheral is called extremely rarely as connectPeripheral never times out, implement your own timeout
 - investigate if anything funky's still going on with the orders of the buttons
 - make 15-speed mouse movement scale exponentially
 - experiment with setting connection priority/latency

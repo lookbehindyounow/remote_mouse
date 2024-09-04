@@ -16,21 +16,30 @@
 // objc class declaration, inherits from NSObject and CBCentralManagerDelegate & CBPeripheralDelegate protocols (protocol≈interface)
 @interface BLEDelegate: NSObject <CBCentralManagerDelegate,CBPeripheralDelegate>
 // nonatomic: not thread-safe, doesn't use any locks (faster)
+// atomic: thread-safe (small but possible chance of connectionAttemptNumber being accessed by 2 different threads simoultaneously)
 // strong: strong reference, adds to reference count & effectively holds on to object so it isn't deallocated until it's no longer being used by holder
 // weak: weak reference, doesn't add to reference count so it's not holding onto the object or preventing deallocation
 // assign: like a weak reference but also for primitive types?
 @property(nonatomic,strong) CBPeripheral* connectedPeripheral; // delagate needs to hold onto peripheral after discovering so it isn't released before it can connect
 // @property(nonatomic,weak) BLEScanner* scanner; // for delegate object to contain a reference to the scanner, commented cause it's not necessary yet but may be useful later
-@property(nonatomic,assign) uint8_t buttonStates; // will treat as a boolean array with bitwise logic to store current button states
+@property(atomic,assign) int connectionAttemptNumber; // to ensure the connection timeout doesn't cancel subsequent connection attempts in fast connect/disconnect scenarios
 // @property(nonatomic,assign) int timesConnected; // to compare with memory being used to check for memory leaks
 @property(nonatomic,assign) int connectionTime; // to measure connectionn duration
+@property(nonatomic,assign) uint8_t buttonStates; // will treat as a boolean array with bitwise logic to store current button states
+@property(atomic,assign) bool swiping; // shift + horizontal swipe takes a while so this ensures it's only happening once at any given time
 @end
 
 @implementation BLEDelegate // objc class defenition/implementation
--(void)centralManagerDidUpdateState:(CBCentralManager*)central{ // "-" means instance level ("+" would be class level), argument "central" is a "CBCentralManager" pointer
+-(instancetype)init{
+    self=[super init];
+    self.connectionAttemptNumber=0;
+    // self.timesConnected=0;
+    self.swiping=false;
+    return self;
+}
 
+-(void)centralManagerDidUpdateState:(CBCentralManager*)central{ // "-" means instance level ("+" would be class level), argument "central" is a "CBCentralManager" pointer
     if (central.state==CBManagerStatePoweredOn){
-        // self.timesConnected=0;
         // methods in objc are referenced with their parameters inside the method name
         [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // objc method call: [object namePart1:arg1 namePart2:arg2];
         NSLog(@"Scanning...");
@@ -45,10 +54,21 @@
     // NSLog(@"Discovered device: %@, RSSI: %@",peripheral.name,RSSI);
     if ([peripheral.name isEqualToString:@"remote_mouse"]){
         [central stopScan];
-        self.connectedPeripheral=peripheral; // for reference counting, if this peripheral isn't held onto it's deallocated after this method returns
         peripheral.delegate=self; // BLEDelegate inherits from CBCentralManagerDelegate & CBPeripheralDelegate protocols so can be used for both
-        [central connectPeripheral:peripheral options:nil];
         NSLog(@"Connecting to %@...",peripheral.name);
+        [central connectPeripheral:peripheral options:nil];
+        self.connectionAttemptNumber++;
+        int thisAttempt=self.connectionAttemptNumber;
+
+        // delay timeout without blocking the main thread with dispatch_after(when,queue,function), anonymous functions in objc are notated ^{code}
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(5e9)),dispatch_get_main_queue(),^{
+            if (self.connectionAttemptNumber==thisAttempt && peripheral.state==1){ // if this attempt still connecting after timeout
+                [central cancelPeripheralConnection:peripheral];
+                NSError* error=[NSError errorWithDomain:@"com.remotemouse" code:0 userInfo:@{NSLocalizedDescriptionKey:@"timed out"}];
+                [self centralManager:central didFailToConnectPeripheral:peripheral error:error];
+            }
+        });
+        self.connectedPeripheral=peripheral; // for reference counting, if this peripheral isn't held onto it's deallocated after this method returns
     }
 }
 
@@ -65,7 +85,6 @@
 -(void)centralManager:(CBCentralManager*)central didFailToConnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
     NSLog(@"Failed to connect to %@ server",peripheral.name);
     NSLog(@"Error: %@",error.localizedDescription);
-    NSLog(@"Was connecting for %lis",time(0)-self.connectionTime);
     self.connectedPeripheral=nil; // strong reference set to nil tells compiler to decrement reference count of the CBPeripheral (from 1 to 0, so it will be deallocated)
     NSLog(@"\n");
     NSLog(@"Scanning...");
@@ -128,9 +147,9 @@
 
     CGEventRef event; // declare event
     CGPoint pos=CGEventGetLocation(CGEventCreate(nullptr)); // get mouse pos
-    int8_t dx=(bytes&30720)>>11; // mouse x speed from characteristic
-    int8_t dy=(bytes&960)>>6; // mouse y speed from characteristic
-    if (dx||dy){ // if mouse moves
+    uint8_t dx=(bytes&30720)>>11; // mouse x speed from characteristic
+    uint8_t dy=(bytes&960)>>6; // mouse y speed from characteristic
+    if (dx||dy && !self.swiping){ // if mouse moves & not already in a shift+sideways swipe
         dx*=(dx+1)/2; // input scaling
         dy*=(dy+1)/2;
         if (!(bytes&16)){ // shift not pressed
@@ -139,17 +158,22 @@
             // creates mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
             event=CGEventCreateMouseEvent(nullptr,kCGEventMouseMoved,pos,(CGMouseButton)0);
         } else if (dx>=2*dy){ // shift pressed & sideways swipe
-            CGKeyCode key=(CGKeyCode) (bytes&32768?123:124);//kVK_LeftArrow:kVK_RightArrow;
+            self.swiping=true;
+            CGKeyCode key=bytes&32768?kVK_RightArrow:kVK_LeftArrow;
             event=CGEventCreateKeyboardEvent(nullptr,kVK_Control,true); // control down
             CGEventPost(kCGHIDEventTap,event);
             CFRelease(event);
+            usleep(500); // delays because macbook gets confused when these are executed too fast & the key combos don't work
             event=CGEventCreateKeyboardEvent(nullptr,key,true); // arrow key down
             CGEventPost(kCGHIDEventTap,event);
             CFRelease(event);
-            event=CGEventCreateKeyboardEvent(nullptr,kVK_Control,false); // control up
+            usleep(500);
+            event=CGEventCreateKeyboardEvent(nullptr,key,false); // arrow key up
             CGEventPost(kCGHIDEventTap,event);
             CFRelease(event);
-            event=CGEventCreateKeyboardEvent(nullptr,key,false); // arrow key up
+            usleep(500);
+            event=CGEventCreateKeyboardEvent(nullptr,kVK_Control,false); // control up
+            self.swiping=false;
         } else{ // shift pressed & upward swipe
             event=CGEventCreateScrollWheelEvent(nullptr,kCGScrollEventUnitPixel,1,bytes&1024?-dy:dy);
         }
@@ -251,7 +275,7 @@ public:
     BLEScanner(){ // constructor
         delegate=[BLEDelegate new]; // instantiates delegate object from objc class BLEDelegate
         // delegate.scanner=this; // sets itself as an attribute of delegate object, commented cause it's not necessary yet but may be useful later
-        centralManager=[[CBCentralManager alloc] initWithDelegate:delegate queue:nil]; // allocates memory for & initialises CBCentralManager object with delegate object, also calls [delegate centralManagerDidUpdateState:self];
+        centralManager=[[CBCentralManager alloc] initWithDelegate:delegate queue:nil]; // create CBCentralManager object with BLEDelegate object, also calls centralManagerDidUpdateState
     }
 
     ~BLEScanner(){ // destructor
@@ -266,9 +290,9 @@ private:
 
 int main(){
     @autoreleasepool{ // manages memory pool for objc objects, in this case I think just for NSRunLoop
-        BLEScanner scanner; // instantiate & initiallise scanner which does the same for delegate & centralManager which calls centralManagerDidUpdateState which calls scanForPeripheralsWithServices:options: on the centralManager
-        [[NSRunLoop currentRunLoop] run]; // gets current running thread (scanForPeripheralsWithServices:options:) & runs in an infinite loop so the program doesn't terminate before the scan gets anything
-        // when the scan finds peripherals it calls the second method on the delegate object with those 4 arguments
+        BLEScanner scanner; // initiallise BLEScanner which initialises CBCentralManager which calls centralManagerDidUpdateState which calls scanForPeripheralsWithServices
+        [[NSRunLoop currentRunLoop] run]; // gets current running thread (scanForPeripheralsWithServices) & runs in an infinite loop so the program doesn't terminate before the scan gets anything
+        // when the scan finds peripherals it calls didDiscoverPeripheral which calls the next method & so on
     }
     NSLog(@"I don't think this bit ever runs in the current version of the app either");
     return 0;
