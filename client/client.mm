@@ -152,7 +152,7 @@
     if (dx||dy && !self.swiping){ // if mouse moves & not already in a shift+sideways swipe
         dx*=(dx+1)/2; // input scaling
         dy*=(dy+1)/2;
-        if (!(bytes&16)){ // shift not pressed
+        if (!(bytes&1)){ // shift not pressed
             pos.x+=dx*(bytes&32768?-1:1);
             pos.y+=dy*(bytes&1024?-1:1);
             // creates mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
@@ -197,42 +197,42 @@
         CGKeyCode key;
         int data;
         switch (i){ // choose event params by button index
-            case 0: // mouse button
-                !(self.buttonStates&16)? // not (shift pressed)?
-                mouseButton=isPressed?kCGEventLeftMouseDown:kCGEventLeftMouseUp: // left mouse
-                mouseButton=isPressed?kCGEventRightMouseDown:kCGEventRightMouseUp; // right mouse
-                break;
-            case 1: // shift button
-                continue; // all it does is update buttonStates&16 which has already happened so skip
-            case 2: // up arrow / unassigned button
-                // !(self.buttonStates&16)?
-                if (!(self.buttonStates&16)){
+            case 0: // up arrow / unassigned button
+                // !(self.buttonStates&1)?
+                if (!(self.buttonStates&1)){
                     key=kVK_UpArrow;
                 } else{
                     continue; // unassigned, skip
                 }
                 break;
-            case 3: // right arrow / volume up button
-                !(self.buttonStates&16)?
+            case 1: // right arrow / volume up button
+                !(self.buttonStates&1)?
                 key=kVK_RightArrow:
                 data=0;
                 break;
-            case 4: // left arrow / unassigned button
-                // !(self.buttonStates&16)?
-                if (!(self.buttonStates&16)){
+            case 2: // left arrow / unassigned button
+                // !(self.buttonStates&1)?
+                if (!(self.buttonStates&1)){
                     key=kVK_LeftArrow;
                 } else{
                     continue; // unassigned, skip
                 }
                 break;
-            case 5: // down arrow / volume down button
-                !(self.buttonStates&16)?
+            case 3: // down arrow / volume down button
+                !(self.buttonStates&1)?
                 key=kVK_DownArrow:
                 data=65536;
                 break;
+            case 4: // mouse button
+                !(self.buttonStates&1)? // not (shift pressed)?
+                mouseButton=isPressed?kCGEventLeftMouseDown:kCGEventLeftMouseUp: // left mouse
+                mouseButton=isPressed?kCGEventRightMouseDown:kCGEventRightMouseUp; // right mouse
+                break;
+            case 5: // shift button
+                continue; // all it does is update buttonStates&16 which has already happened so skip
         }
 
-        if (self.buttonStates&16&&(i==3||i==5)){ // if volume button
+        if (self.buttonStates&1&&(i==1||i==3)){ // if volume button
             short intPressed;
             intPressed=isPressed?0xa00:0xb00;
             NSEvent* cocoaEvent=[NSEvent otherEventWithType:NSEventTypeSystemDefined location:NSZeroPoint // create NSEvent
@@ -243,7 +243,7 @@
             event=[cocoaEvent CGEvent]; // get CGEvent from NSEvent
             CGEventPost(kCGHIDEventTap,event); // post event, we can't release it cause it's owned by cocoaEvent but this is released with ARC anyway
         } else{
-            event=i?CGEventCreateKeyboardEvent(nullptr,key,isPressed):CGEventCreateMouseEvent(nullptr,mouseButton,pos,(CGMouseButton)0);
+            event=i==4?CGEventCreateMouseEvent(nullptr,mouseButton,pos,(CGMouseButton)0):CGEventCreateKeyboardEvent(nullptr,key,isPressed);
             CGEventPost(kCGHIDEventTap,event); // post event
             CFRelease(event); // release event for memory management
         }

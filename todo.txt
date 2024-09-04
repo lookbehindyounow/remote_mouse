@@ -1,9 +1,6 @@
 - fix idle timeout 30s issue - request custom supervision timeout from CoreBluetooth client?
-- didFailToConnectPeripheral is called extremely rarely as connectPeripheral never times out, implement your own timeout
 - investigate if anything funky's still going on with the orders of the buttons
-- make 15-speed mouse movement scale exponentially
-- experiment with setting connection priority/latency
-- experiment with bluetooth 5.x if not already using it
 - make buttons in app to start & stop server, or some kind of loop that runs it as soon as bluetooth is enabled
-- make the ui better
-- multi-touch
+- make the ui better - arrows & shift need shapes; use InstructionGroup to save canvas commands & then apply to a canvas all at once
+- experiment with setting connection priority/latency - seems like this can't be done in Android from gatt server or in CoreBluetooth at all?
+- experiment with bluetooth 5.x if not already using it - can't on my macbook, probably can't on my phone either
