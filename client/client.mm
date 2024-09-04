@@ -138,7 +138,19 @@
             pos.y+=dy*(bytes&1024?-1:1);
             // creates mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
             event=CGEventCreateMouseEvent(nullptr,kCGEventMouseMoved,pos,(CGMouseButton)0);
-        } else{ // shift pressed
+        } else if (dx>=2*dy){ // shift pressed & sideways swipe
+            CGKeyCode key=(CGKeyCode) (bytes&32768?123:124);//kVK_LeftArrow:kVK_RightArrow;
+            event=CGEventCreateKeyboardEvent(nullptr,kVK_Control,true); // control down
+            CGEventPost(kCGHIDEventTap,event);
+            CFRelease(event);
+            event=CGEventCreateKeyboardEvent(nullptr,key,true); // arrow key down
+            CGEventPost(kCGHIDEventTap,event);
+            CFRelease(event);
+            event=CGEventCreateKeyboardEvent(nullptr,kVK_Control,false); // control up
+            CGEventPost(kCGHIDEventTap,event);
+            CFRelease(event);
+            event=CGEventCreateKeyboardEvent(nullptr,key,false); // arrow key up
+        } else{ // shift pressed & upward swipe
             event=CGEventCreateScrollWheelEvent(nullptr,kCGScrollEventUnitPixel,1,bytes&1024?-dy:dy);
         }
         CGEventPost(kCGHIDEventTap,event);
