@@ -10,6 +10,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.widget import Widget
 from kivy.uix.label import Label
 from kivy.uix.button import Button
+from kivy.graphics import InstructionGroup, Line, Rectangle, Triangle, Translate, Rotate
 from kivy.metrics import dp
 from kivy.clock import Clock
 
@@ -169,16 +170,26 @@ class MainWidget(BoxLayout): # UI
         self.spacing=dp(10)
 
         self.button_container=GridLayout()
-        self.buttons=[None]*6
+        self.add_widget(self.button_container)
         self.isShifted=False
         self.button_names=[["up arrow","right arrow","left arrow","down arrow","left mouse","shift"], # button text
                             ["<unassigned>","volume up","<unassigned>","volume down","right mouse","shift"]] # shifted button text
-        for i in range(6): # create buttons
-            self.buttons[i]=Button(text=self.button_names[0][i])
-            self.buttons[i].i=i # for bound methods to know which bit to change when button pressed/released
-            self.buttons[i].bind(on_press=self.press,on_release=self.release)
-            self.button_container.add_widget(self.buttons[i])
-        self.add_widget(self.button_container)
+        self.buttons=[Button() for i in range(6)]
+        i=0
+        for button in self.buttons: # create buttons
+            button.i=i # for bound methods to know which bit to change when button pressed/released
+            if i<4: # arrow button
+                button.arrow=InstructionGroup()
+                button.arrow.add(Rotate(angle=[0,270,90,180][i],origin=(0,0)))
+                button.arrow.add(Rectangle(pos=(-40,-80),size=(80,80)))
+                button.arrow.add(Triangle(points=(-100,0,0,80,100,0)))
+                button.arrow.add(Rotate(angle=[0,90,270,180][i],origin=(0,0)))
+            if i==5: # shift button
+                button.circle=Line(circle=(0,0,50),width=10)
+                button.canvas.add(button.circle) # adding this to canvas here cause self.release(self.buttons[5]) requires it
+            button.bind(on_press=self.press,on_release=self.release)
+            i+=1
+        self.release(self.buttons[5]) # call release shift button to give buttons their normal names & icons to start
 
         self.mouse_pad=Widget() # to detect touches
         self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
@@ -203,12 +214,19 @@ class MainWidget(BoxLayout): # UI
             self.button_container.rows=3
             [self.button_container.add_widget(self.buttons[i]) for i in range(6)]
         # when you rotate your phone it calls on_size before widget positions have updated
-        Clock.schedule_once(self.place_label) # so moving the log/status thing needs to be scheduled for next frame
+        Clock.schedule_once(self.place_label_and_icons) # things that need scheduled for next frame cause they depend on values that haven't changed yet
     
-    def place_label(self,dt):
+    def place_label_and_icons(self,dt):
         self.screen_logs.pos=self.mouse_pad.to_parent(0,0,True) # display log/status thing in mouse_pad
         self.screen_logs.size=self.mouse_pad.size # for valign="center" to work as expected
         self.screen_logs.text_size=self.mouse_pad.size # so all text stays on screen
+        for button in self.buttons[:4]: # arrow buttons
+            button.canvas.remove(button.arrow)
+            button.canvas.add(Translate(button.center_x,button.center_y))
+            button.canvas.add(button.arrow)
+            button.canvas.add(Translate(-button.center_x,-button.center_y))
+        shift_button=self.buttons[5]
+        shift_button.circle.circle=(shift_button.center_x,shift_button.center_y,50)
     
     def read_mouse(self,caller,touch): # handle mouse pad input
         if self.mouse_pad.collide_point(*touch.pos): # only if touch pos is within mouse pad pos
@@ -233,16 +251,30 @@ class MainWidget(BoxLayout): # UI
         self.input_buffer&=63 # wipe pos data (first 10 bits) to 0s
     
     def press(self,caller): # handle button press
-        if caller.i==5: # shift button
+        if caller.i==5: # if shift button
             for button,name in zip(self.buttons,self.button_names[1]):
-                button.text=name
+                if button.i==5: # for shift button
+                    button.text=""
+                    button.canvas.add(button.circle) # draw circle
+                else:
+                    button.text=name # otherwise give button shifted name
+                    if button.i<4: # for arrow buttons
+                        button.canvas.remove(button.arrow)
         self.input_buffer|=(32>>caller.i) # set relevant button bit (positions 11-16) to 1
         self.send()
     
     def release(self,caller): # handle button release
-        if caller.i==5: # shift button
+        if caller.i==5: # if shift button
             for button,name in zip(self.buttons,self.button_names[0]):
-                button.text=name
+                if button.i<4: # for arrow buttons
+                    button.text=""
+                    button.canvas.add(Translate(button.center_x,button.center_y))
+                    button.canvas.add(button.arrow) # draw arrow
+                    button.canvas.add(Translate(-button.center_x,-button.center_y))
+                else:
+                    button.text=name # otherwise give button unshifted name
+                    if button.i==5: # for shift button
+                        button.canvas.remove(button.circle)
         self.input_buffer&=65535-(32>>caller.i) # set relevant button bit (positions 11-16) to 0
         self.send()
     

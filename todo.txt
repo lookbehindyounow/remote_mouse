@@ -1,6 +1,6 @@
 - fix idle timeout 30s issue - request custom supervision timeout from CoreBluetooth client?
 - investigate if anything funky's still going on with the orders of the buttons
 - make buttons in app to start & stop server, or some kind of loop that runs it as soon as bluetooth is enabled
-- make the ui better - arrows & shift need shapes; use InstructionGroup to save canvas commands & then apply to a canvas all at once
+- make the ui better
 - experiment with setting connection priority/latency - seems like this can't be done in Android from gatt server or in CoreBluetooth at all?
 - experiment with bluetooth 5.x if not already using it - can't on my macbook, probably can't on my phone either
