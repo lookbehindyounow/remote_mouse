@@ -7,3 +7,7 @@ kivy_app_with_server/bin
 kivy_app_with_server/.buildozer
 client/client
 client/client.dSYM
+connection_timeout_testing/bin
+connection_timeout_testing/.buildozer
+connection_timeout_testing/client
+connection_timeout_testing/client.dSYM

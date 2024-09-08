@@ -178,7 +178,6 @@ class MainWidget(BoxLayout): # UI
         i=0
         for button in self.buttons: # create buttons
             button.i=i # for easy identification
-            button.font_size=dp(30) # can remove if/when there's no text on buttons
             button.bind(on_press=self.press,on_release=self.release)
             button.icon=Widget() # for an extra canvas that we can clear without removing the button's own graphic
             button.add_widget(button.icon)
@@ -201,15 +200,16 @@ class MainWidget(BoxLayout): # UI
                 for instruction in button.left_mouse.children: # copy instructions
                     button.right_mouse.add(instruction)
                 button.right_mouse.add(Scale(x=-1,y=1,origin=(0,0)))
-            if i in [1,3]: # for volume button icons
+            if i in [1,3]: # volume button icons
                 button.volume=InstructionGroup()
                 button.volume.add(Rectangle(pos=(dp(-19.5),dp(-8)),size=(dp(12),dp(16))))
                 button.volume.add(Triangle(points=(dp(-17.5),0,dp(7.5),dp(20),dp(7.5),dp(-20))))
                 button.volume.add(Line(ellipse=(dp(-3),dp(-9),dp(18),dp(18),45,135),width=dp(1.5)))
-                if i==1: # for volume up button
+                if i==1: # extra lines in volume up button icon
                     button.volume.add(Line(ellipse=(dp(-6.5),dp(-13.5),dp(27),dp(27),45,135),width=dp(1.5)))
                     button.volume.add(Line(ellipse=(dp(-10),dp(-18),dp(36),dp(36),45,135),width=dp(1.5)))
-            if i==5: # shift button icons
+            if i==5: # shift button font size/icon
+                button.font_size=dp(30)
                 button.circle=Line(circle=(0,0,dp(20)),width=dp(4))
             i+=1
         self.release(self.buttons[5]) # call release shift button to give buttons their normal names & icons to start

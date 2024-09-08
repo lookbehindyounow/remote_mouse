@@ -125,6 +125,15 @@
         // [peripheral readValueForCharacteristic:characteristic];
         [peripheral setNotifyValue:true forCharacteristic:characteristic];
     }
+    int thisAttempt=self.connectionAttemptNumber;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(5e9)),dispatch_get_main_queue(),^{ // attempt at a keep alive method
+        if (self.connectionAttemptNumber==thisAttempt && peripheral.state==2){ // if this attempt still connected after 10s
+            short data=0;
+            NSLog(@"0");
+            [peripheral writeValue:[NSData dataWithBytes:&data length:2] forCharacteristic:service.characteristics[0] type:CBCharacteristicWriteWithResponse];
+            NSLog(@"1");
+        }
+    });
 }
 
 -(void)peripheral:(CBPeripheral*)peripheral didUpdateValueForCharacteristic:(CBCharacteristic*)characteristic error:(NSError*)error{
