@@ -2,16 +2,20 @@ package com.remotemouse;
 
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGattServer; // not required for client to receive notifcations
-import android.bluetooth.BluetoothGattCharacteristic; // not required for client to receive notifcations
+import android.bluetooth.BluetoothGattServer;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGatt;
 
 public class GattCallback extends BluetoothGattServerCallback{
     public BluetoothDevice device; // need the connected device to send notifications to; accessed in the python
     public IJavaMessenger javaMessenger; // interface declared in java implemented in python to trigger python events from onConnectionStateChange
-    private BluetoothGattServer gattServer; // not required for client to receive notifcations
+    private BluetoothGattServer gattServer; // need the server to send the response to the write request to the CCCD
     public GattCallback(IJavaMessenger javaMessenger){
         this.javaMessenger=javaMessenger;
         this.device=null;
+    }
+    public void setServer(BluetoothGattServer gattServer){ // this method called from python after creating server
+        this.gattServer=gattServer;
     }
     
     @Override
@@ -40,12 +44,8 @@ public class GattCallback extends BluetoothGattServerCallback{
         this.javaMessenger.callInPython(message);
     }
 
-    public void setServer(BluetoothGattServer gattServer){ // this method used in the python as server doesn't exist at time of initialisation
-        this.gattServer=gattServer; // not required for client to receive notifcations
-    }
-
-    @Override // onCharacteristicReadRequest not required for client to receive notifcations
-    public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic){
-        this.gattServer.sendResponse(device, requestId, 0, offset, characteristic.getValue());
+    @Override // needed for client to receive confirmation after writing to CCCD (CCCD value doesn't actually need to be updated)
+    public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value){
+        gattServer.sendResponse(device,requestId,BluetoothGatt.GATT_SUCCESS,offset,value);
     }
 }

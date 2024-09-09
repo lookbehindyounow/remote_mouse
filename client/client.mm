@@ -1,5 +1,3 @@
-// IMPORTANT RULE WITH NO EXAMPLE IN CODE: it's "self" in objc & "this" in c++
-// it's also "import" for objc libraries vs "include" for c++
 #import <Foundation/Foundation.h> // this has all the basic the NS stuff
 #import <CoreBluetooth/CoreBluetooth.h> // macbook bluetooth api
 #include <cstring> // for data processing
@@ -7,60 +5,43 @@
 #include <cmath> // for mouse movement processing
 #include <Carbon/Carbon.h> // for kVK_ANSI key codes
 #import <Cocoa/Cocoa.h> // for NSEvent
-#include <ctime> // for measuring time
 // #include <mach/mach.h> // for logging how much memory is being used
 // #include <mach/task_info.h>
 
-// class BLEScanner; // declaring c++ class BLEScanner so it can be referenced in BLEDelegate, commented cause it's not currently being referenced in BLEDelegate
-
-// objc class declaration, inherits from NSObject and CBCentralManagerDelegate & CBPeripheralDelegate protocols (protocol≈interface)
 @interface BLEDelegate: NSObject <CBCentralManagerDelegate,CBPeripheralDelegate>
-// nonatomic: not thread-safe, doesn't use any locks (faster)
-// atomic: thread-safe (small but possible chance of connectionAttemptNumber being accessed by 2 different threads simoultaneously)
-// strong: strong reference, adds to reference count & effectively holds on to object so it isn't deallocated until it's no longer being used by holder
-// weak: weak reference, doesn't add to reference count so it's not holding onto the object or preventing deallocation
-// assign: like a weak reference but also for primitive types?
 @property(nonatomic,strong) CBPeripheral* connectedPeripheral; // delagate needs to hold onto peripheral after discovering so it isn't released before it can connect
-// @property(nonatomic,weak) BLEScanner* scanner; // for delegate object to contain a reference to the scanner, commented cause it's not necessary yet but may be useful later
 @property(atomic,assign) int connectionAttemptNumber; // to ensure the connection timeout doesn't cancel subsequent connection attempts in fast connect/disconnect scenarios
-// @property(nonatomic,assign) int timesConnected; // to compare with memory being used to check for memory leaks
-@property(nonatomic,assign) int connectionTime; // to measure connectionn duration
 @property(nonatomic,assign) uint8_t buttonStates; // will treat as a boolean array with bitwise logic to store current button states
 @property(atomic,assign) bool swiping; // shift + horizontal swipe takes a while so this ensures it's only happening once at any given time
 @end
 
-@implementation BLEDelegate // objc class defenition/implementation
+@implementation BLEDelegate // these methods are called by CBentralManager & CBPeripheral upon the occurance of the events they're named after
 -(instancetype)init{
     self=[super init];
     self.connectionAttemptNumber=0;
-    // self.timesConnected=0;
-    self.swiping=false;
     return self;
 }
 
--(void)centralManagerDidUpdateState:(CBCentralManager*)central{ // "-" means instance level ("+" would be class level), argument "central" is a "CBCentralManager" pointer
-    if (central.state==CBManagerStatePoweredOn){
-        // methods in objc are referenced with their parameters inside the method name
-        [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // objc method call: [object namePart1:arg1 namePart2:arg2];
+-(void)centralManagerDidUpdateState:(CBCentralManager*)central{
+    if (central.state==CBManagerStatePoweredOn){ // check bluetooth enabled
+        [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // 4500 is target service UUID
         NSLog(@"Scanning...");
-        // [CBUUID UUIDWithString:@"4500"] is target service UUID, should make this more dynamic at some point
     } else{
         NSLog(@"Bluetooth is not available.");
     }
 }
 
-// objc method definition: +/-(return type)namePart1:(arg1Type)arg1... namePartN:(argNType)argN {implementation}, argTypes are pointers, primitives or structs
 -(void)centralManager:(CBCentralManager*)central didDiscoverPeripheral:(CBPeripheral*)peripheral advertisementData:(NSDictionary<NSString*,id>*)advertisementData RSSI:(NSNumber*)RSSI{
     // NSLog(@"Discovered device: %@, RSSI: %@",peripheral.name,RSSI);
-    if ([peripheral.name isEqualToString:@"remote_mouse"]){
+    if ([peripheral.name isEqualToString:@"remote_mouse"]){ // when correct gatt server found
         [central stopScan];
-        peripheral.delegate=self; // BLEDelegate inherits from CBCentralManagerDelegate & CBPeripheralDelegate protocols so can be used for both
+        peripheral.delegate=self; // assign self as CBPeripherals delegate object
         NSLog(@"Connecting to %@...",peripheral.name);
         [central connectPeripheral:peripheral options:nil];
         self.connectionAttemptNumber++;
         int thisAttempt=self.connectionAttemptNumber;
 
-        // delay timeout without blocking the main thread with dispatch_after(when,queue,function), anonymous functions in objc are notated ^{code}
+        // delay timeout 5s without blocking the main thread
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(5e9)),dispatch_get_main_queue(),^{
             if (self.connectionAttemptNumber==thisAttempt && peripheral.state==1){ // if this attempt still connecting after timeout
                 [central cancelPeripheralConnection:peripheral];
@@ -73,11 +54,9 @@
 }
 
 -(void)centralManager:(CBCentralManager*)central didConnectPeripheral:(CBPeripheral*)peripheral{
-    self.connectionTime=time(0);
     self.buttonStates=0;
+    self.swiping=false;
     NSLog(@"Connected to %@ server",peripheral.name);
-    // self.timesConnected++;
-    // NSLog(@"times connected: %i",self.timesConnected); // log times connected to compare with current used memory size
     [peripheral discoverServices:nil];
     // [central cancelPeripheralConnection:peripheral]; // disconect upon connection for testing
 }
@@ -94,21 +73,20 @@
 -(void)centralManager:(CBCentralManager*)central didDisconnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
     NSLog(@"\n");
     NSLog(@"Disconnected from %@ server",peripheral.name);
-    error?NSLog(@"Error: %@",error.localizedDescription):
-    NSLog(@"Connected for %lis",time(0)-self.connectionTime);
+    error?NSLog(@"Error: %@",error.localizedDescription):(void)0;
     self.connectedPeripheral=nil; // strong reference set to nil tells compiler to decrement reference count of the CBPeripheral (from 1 to 0, so it will be deallocated)
     NSLog(@"\n");
     NSLog(@"Scanning...");
     [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil]; // restart scan
 }
 
--(void)peripheral:(CBPeripheral*)peripheral didDiscoverServices:(NSError*)error{ // services are in peripheral.services after running discoverServices
+-(void)peripheral:(CBPeripheral*)peripheral didDiscoverServices:(NSError*)error{
     if (error){
         NSLog(@"Error discovering services: %@",error.localizedDescription);
         return;
     }
     NSLog(@"Services:");
-    for (CBService* service in peripheral.services){
+    for (CBService* service in peripheral.services){ // services are in peripheral.services after running discoverServices
         NSLog(@"  Service UUID: %@",service.UUID);
         [peripheral discoverCharacteristics:nil forService:service];
     }
@@ -122,18 +100,8 @@
     NSLog(@"  Characteristics:");
     for (CBCharacteristic* characteristic in service.characteristics){
         NSLog(@"    Characteristic UUID: %@; subscribing",characteristic.UUID);
-        // [peripheral readValueForCharacteristic:characteristic];
-        [peripheral setNotifyValue:true forCharacteristic:characteristic];
+        [peripheral setNotifyValue:true forCharacteristic:characteristic]; // subscribe to notifications
     }
-    int thisAttempt=self.connectionAttemptNumber;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(5e9)),dispatch_get_main_queue(),^{ // attempt at a keep alive method
-        if (self.connectionAttemptNumber==thisAttempt && peripheral.state==2){ // if this attempt still connected after 10s
-            short data=0;
-            NSLog(@"0");
-            [peripheral writeValue:[NSData dataWithBytes:&data length:2] forCharacteristic:service.characteristics[0] type:CBCharacteristicWriteWithResponse];
-            NSLog(@"1");
-        }
-    });
 }
 
 -(void)peripheral:(CBPeripheral*)peripheral didUpdateValueForCharacteristic:(CBCharacteristic*)characteristic error:(NSError*)error{
@@ -144,10 +112,9 @@
 
     short bytes; // put raw bytes from characteristic.value's property "bytes" into a short (cause it's 2 bytes)
     memcpy(&bytes,[characteristic.value bytes],2);
-
     // char bits[16];
     // for (short i=0;i<16;i++){
-    //     bits[i]=bytes&(32768>>i)?'1':'0'; // for each bit in "bytes", add a 1 or 0 to binary string "bits"
+    //     bits[i]=bytes&(32768>>i)?'1':'0'; // for each bit in bytes, add a 1 or 0 to binary string "bits"
     // }
     // char x[6];char y[6];char buttons[7];
     // strncpy(x,bits,5);strncpy(y,bits+5,5);strncpy(buttons,bits+10,6); // split bits up into sections for x, y & buttons
@@ -162,13 +129,13 @@
         dx*=(dx+1)/2; // input scaling
         dy*=(dy+1)/2;
         if (!(bytes&1)){ // shift not pressed
-            pos.x+=dx*(bytes&32768?-1:1);
+            pos.x+=dx*(bytes&32768?-1:1); // update mouse pos with x/y speed × sign bit
             pos.y+=dy*(bytes&1024?-1:1);
-            // creates mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
+            // create mouse move event, (source,type,pos,button), button is ignored unless type is kCGEventOtherMouseSomething
             event=CGEventCreateMouseEvent(nullptr,kCGEventMouseMoved,pos,(CGMouseButton)0);
         } else if (dx>=2*dy){ // shift pressed & sideways swipe
             self.swiping=true;
-            CGKeyCode key=bytes&32768?kVK_RightArrow:kVK_LeftArrow;
+            CGKeyCode key=bytes&32768?kVK_RightArrow:kVK_LeftArrow; // get swipe direction from x sign bit
             event=CGEventCreateKeyboardEvent(nullptr,kVK_Control,true); // control down
             CGEventPost(kCGHIDEventTap,event);
             CFRelease(event);
@@ -207,51 +174,49 @@
         int data;
         switch (i){ // choose event params by button index
             case 0: // up arrow / unassigned button
-                // !(self.buttonStates&1)?
-                if (!(self.buttonStates&1)){
+                if (!(self.buttonStates&1)){ // if shift not pressed
                     key=kVK_UpArrow;
                 } else{
                     continue; // unassigned, skip
                 }
                 break;
             case 1: // right arrow / volume up button
-                !(self.buttonStates&1)?
+                !(self.buttonStates&1)? // if shift not pressed
                 key=kVK_RightArrow:
-                data=0;
+                data=0; // used in NSData constructor for volume commands
                 break;
             case 2: // left arrow / unassigned button
-                // !(self.buttonStates&1)?
-                if (!(self.buttonStates&1)){
+                if (!(self.buttonStates&1)){ // if shift not pressed
                     key=kVK_LeftArrow;
                 } else{
                     continue; // unassigned, skip
                 }
                 break;
             case 3: // down arrow / volume down button
-                !(self.buttonStates&1)?
+                !(self.buttonStates&1)? // if shift not pressed
                 key=kVK_DownArrow:
-                data=65536;
+                data=65536; // used in NSData constructor for volume commands
                 break;
             case 4: // mouse button
-                !(self.buttonStates&1)? // not (shift pressed)?
+                !(self.buttonStates&1)? // if shift not pressed
                 mouseButton=isPressed?kCGEventLeftMouseDown:kCGEventLeftMouseUp: // left mouse
                 mouseButton=isPressed?kCGEventRightMouseDown:kCGEventRightMouseUp; // right mouse
                 break;
             case 5: // shift button
-                continue; // all it does is update buttonStates&16 which has already happened so skip
+                continue; // all it does is update buttonStates&1 which has already happened so skip
         }
 
         if (self.buttonStates&1&&(i==1||i==3)){ // if volume button
             short intPressed;
-            intPressed=isPressed?0xa00:0xb00;
-            NSEvent* cocoaEvent=[NSEvent otherEventWithType:NSEventTypeSystemDefined location:NSZeroPoint // create NSEvent
-                modifierFlags:intPressed // variable input
+            intPressed=isPressed?0xa00:0xb00; // key up/down
+            NSEvent* cocoaEvent=[NSEvent otherEventWithType:NSEventTypeSystemDefined location:NSZeroPoint // create NSEvent, don't know what these parameters do
+                modifierFlags:intPressed // key up/down
                 timestamp:0 windowNumber:0 context:nil subtype:8 // don't know what these do
-                data1:data|intPressed // variable input
-                data2:-1]; // don't know what these do
+                data1:data|intPressed // whick volume key & key up/down
+                data2:-1]; // don't know what this does
             event=[cocoaEvent CGEvent]; // get CGEvent from NSEvent
-            CGEventPost(kCGHIDEventTap,event); // post event, we can't release it cause it's owned by cocoaEvent but this is released with ARC anyway
-        } else{
+            CGEventPost(kCGHIDEventTap,event); // post event, we can't release it cause it's owned by the NSEvent but NSEvent is released with ARC anyway
+        } else{ // if mouse button create mouse event otherwise create keyboard event
             event=i==4?CGEventCreateMouseEvent(nullptr,mouseButton,pos,(CGMouseButton)0):CGEventCreateKeyboardEvent(nullptr,key,isPressed);
             CGEventPost(kCGHIDEventTap,event); // post event
             CFRelease(event); // release event for memory management
@@ -283,10 +248,8 @@ class BLEScanner{
 public:
     BLEScanner(){ // constructor
         delegate=[BLEDelegate new]; // instantiates delegate object from objc class BLEDelegate
-        // delegate.scanner=this; // sets itself as an attribute of delegate object, commented cause it's not necessary yet but may be useful later
         centralManager=[[CBCentralManager alloc] initWithDelegate:delegate queue:nil]; // create CBCentralManager object with BLEDelegate object, also calls centralManagerDidUpdateState
     }
-
     ~BLEScanner(){ // destructor
         NSLog(@"I don't think this bit ever runs in the current version of the app");
         [centralManager release]; // tells compiler that BLEScanner object is no longer using centralManager object

@@ -39,15 +39,6 @@
     [peripheral discoverServices:nil];
 }
 
--(void)centralManager:(CBCentralManager*)central didDisconnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
-    NSLog(@"Disconnected from %@ server",peripheral.name);
-    error?NSLog(@"Error: %@",error.localizedDescription):
-    NSLog(@"Connected for %lis",time(0)-self.connectionTime);
-    self.connectedPeripheral=nil;
-    NSLog(@"Scanning...");
-    [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil];
-}
-
 -(void)peripheral:(CBPeripheral*)peripheral didDiscoverServices:(NSError*)error{
     [peripheral discoverCharacteristics:nil forService:peripheral.services[0]];
 }
@@ -76,6 +67,15 @@
     }
     bits[16]='\0';
     NSLog(@"%s",bits);
+}
+
+-(void)centralManager:(CBCentralManager*)central didDisconnectPeripheral:(CBPeripheral*)peripheral error:(NSError*)error{
+    NSLog(@"Disconnected from %@ server",peripheral.name);
+    error?NSLog(@"Error: %@",error.localizedDescription):
+    NSLog(@"Connected for %lis",time(0)-self.connectionTime);
+    self.connectedPeripheral=nil;
+    NSLog(@"Scanning...");
+    [central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:@"4500"]] options:nil];
 }
 @end
 
