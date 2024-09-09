@@ -125,11 +125,12 @@ class MainWidget(BoxLayout): # UI
         super().__init__(**kwargs)
         self.input_buffer=0 # this is where the current input will be written to before it's packaged into 2 bytes & sent
         self.app=app # get app
+        self.orientation="vertical"
         self.padding=dp(20)
         self.spacing=dp(10)
 
         self.button_container=GridLayout()
-        self.add_widget(self.button_container)
+        self.button_container.rows=3
         self.isShifted=False
         self.button_names=[["up arrow","right arrow","left arrow","down arrow","left mouse","shift"], # button text
                             ["<unassigned>","volume up","<unassigned>","volume down","right mouse","shift"]] # shifted button text
@@ -140,7 +141,6 @@ class MainWidget(BoxLayout): # UI
             button.bind(on_press=self.press,on_release=self.release)
             button.icon=Widget() # for an extra canvas that we can clear without clearing the button's own graphics
             button.add_widget(button.icon)
-            button.current_icon=None
             if i<4: # arrow button icons
                 button.arrow=InstructionGroup()
                 button.arrow.add(Rotate(angle=[0,270,90,180,0,0][i],origin=(0,0))) # change canvas rotation for each arrow
@@ -171,7 +171,8 @@ class MainWidget(BoxLayout): # UI
                 button.font_size=dp(30)
                 button.circle=Line(circle=(0,0,dp(20)),width=dp(4))
             i+=1
-        self.release(self.buttons[5]) # call release shift button to give buttons their normal names & icons to start
+        [self.button_container.add_widget(button) for button in self.buttons]
+        self.add_widget(self.button_container)
 
         self.mouse_pad=Widget() # to detect touches
         self.mouse_pad.bind(on_touch_down=self.read_mouse,on_touch_move=self.read_mouse) # binding screen touch methods
@@ -181,33 +182,17 @@ class MainWidget(BoxLayout): # UI
 
         self.screen_logs=Label(valign="center") # screen_logs for debug
         self.mouse_pad.add_widget(self.screen_logs)
-        Clock.schedule_once(lambda dt: self.app.update_message(0,"")) # put message text in screen_logs so they show on startup
-        # scheduled because app doesn't have ui attribute yet, so update_message won't be able to change screen_logs.text until next frame
 
-    def on_size(self,caller,size):
-        if self.width>self.height: # landscape
-            self.orientation="horizontal"
-            self.button_container.clear_widgets()
-            self.button_container.rows=2
-            [self.button_container.add_widget(self.buttons[i]) for i in [0,1,5,2,3,4]] # order of buttons is different for landscape
-        else: # portrait
-            self.orientation="vertical"
-            self.button_container.clear_widgets()
-            self.button_container.rows=3
-            [self.button_container.add_widget(self.buttons[i]) for i in range(6)]
-        # when you rotate your phone it calls on_size before widget positions have updated
-        Clock.schedule_once(self.place_label_and_icons) # things that need scheduled for next frame cause they depend on values that haven't changed yet
-    
+        Clock.schedule_once(self.place_label_and_icons) # things that need scheduled for next frame cause they depend on stuff that's not set yet
+
     def place_label_and_icons(self,dt):
-        self.screen_logs.pos=self.mouse_pad.to_parent(0,0,True) # update screen_logs pos
+        self.app.update_message(0,"") # put message text in screen_logs so they show on startup
+        # scheduled because app doesn't have ui attribute yet in constructor, so update_message won't work for screen_logs
+        self.screen_logs.pos=self.mouse_pad.to_parent(0,0,True) # place screen_logs
         self.screen_logs.size=self.mouse_pad.size # for valign="center" to work as expected
         self.screen_logs.text_size=self.mouse_pad.size # to ensure all text stays on screen
-        for button in self.buttons: # place icons for each button
-            if button.current_icon: # that has an icon
-                button.icon.canvas.clear()
-                button.icon.canvas.add(Translate(button.center_x,button.center_y)) # translate canvas to button pos
-                button.icon.canvas.add(button.current_icon) # draw button's current icon
-                button.icon.canvas.add(Translate(-button.center_x,-button.center_y))
+        self.release(self.buttons[5]) # call release shift button to give buttons their normal names & icons to start
+        # scheduled because widget sizes & positions are all (100,100) in constructor
     
     def read_mouse(self,caller,touch): # handle mouse pad input
         if self.mouse_pad.collide_point(*touch.pos): # if touch pos is within mouse pad pos
@@ -234,20 +219,17 @@ class MainWidget(BoxLayout): # UI
         if caller.i==5: # if shift button pressed
             for button,name in zip(self.buttons,self.button_names[1]):
                 button.icon.canvas.clear()
-                button.current_icon=None
                 button.text=""
+                button.icon.canvas.add(Translate(button.center_x,button.center_y)) # translate canvas to button pos
                 if button.i in [1,3]: # for volume buttons
-                    button.current_icon=button.volume
+                    button.icon.canvas.add(button.volume)
                 elif button.i==4: # for mouse button
-                    button.current_icon=button.right_mouse
+                    button.icon.canvas.add(button.right_mouse)
                 elif button.i==5: # for shift button
-                    button.current_icon=button.circle
+                    button.icon.canvas.add(button.circle)
                 else:
                     button.text=name # otherwise give button shifted name
-                if button.current_icon: # update button icons
-                    button.icon.canvas.add(Translate(button.center_x,button.center_y)) # translate canvas to button pos
-                    button.icon.canvas.add(button.current_icon) # draw current icon
-                    button.icon.canvas.add(Translate(-button.center_x,-button.center_y))
+                button.icon.canvas.add(Translate(-button.center_x,-button.center_y))
     
     def release(self,caller): # handle button release
         self.input_buffer&=65535-(32>>caller.i) # set relevant button bit (positions 11-16) to 0
@@ -255,18 +237,15 @@ class MainWidget(BoxLayout): # UI
         if caller.i==5: # if shift button released
             for button,name in zip(self.buttons,self.button_names[0]):
                 button.icon.canvas.clear()
-                button.current_icon=None
                 button.text=""
+                button.icon.canvas.add(Translate(button.center_x,button.center_y)) # translate canvas to button pos
                 if button.i<4: # for arrow buttons
-                    button.current_icon=button.arrow
+                    button.icon.canvas.add(button.arrow)
                 elif button.i==4: # for mouse button
-                    button.current_icon=button.left_mouse
+                    button.icon.canvas.add(button.left_mouse)
                 else:
                     button.text=name # otherwise give button unshifted name
-                if button.current_icon: # update button icons
-                    button.icon.canvas.add(Translate(button.center_x,button.center_y)) # translate canvas to button pos
-                    button.icon.canvas.add(button.current_icon) # draw current icon
-                    button.icon.canvas.add(Translate(-button.center_x,-button.center_y))
+                button.icon.canvas.add(Translate(-button.center_x,-button.center_y))
     
     def send(self): # log input, update characteristic & notify client
         self.app.update_message(0,f"{self.input_buffer:016b}")
